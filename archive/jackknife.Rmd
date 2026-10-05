@@ -1,0 +1,45 @@
+---
+title: "jackknife"
+author: "nicholas ruiz"
+date: "2024-11-26"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+jknife <- function(x, fxn, ci=0.95) {
+    theta <- fxn(x)
+    n <- length(x)
+    partials <- rep(0,n)  
+    for (i in 1:n){
+       partials[i] <- fxn(x[-i])
+    }
+    pseudos <- (n*theta) - (n-1)*partials
+    jack.est <- mean(pseudos)
+    jack.se <- sqrt(var(pseudos)/n)
+    alpha = 1-ci
+    CI <- qt(alpha/2,n-1,lower.tail=FALSE)*jack.se
+    jack.ci <- c(jack.est - CI, jack.est + CI)
+    list(est=jack.est, se=jack.se, ci=jack.ci, pseudos = pseudos, partials=partials)
+}
+```
+
+```{r}
+jack.means <- jknife(inc_dbl_scr$lever, mean)
+jack.vars <- jknife(inc_dbl_scr$lever, var)
+```
+
+```{r}
+# create a convenience function
+get.ci <- function(x) { return(x$ci) }  #x$ci gives confidence interval
+```
+
+```{r}
+# generate jackknife estimates for mean
+j.mean <- apply(inc_dbl_scr$lever, 1, jknife, mean)
+```
+
+

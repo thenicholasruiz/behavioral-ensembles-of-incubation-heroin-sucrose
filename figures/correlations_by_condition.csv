@@ -1,0 +1,41 @@
+"Condition","Var1","Var2","r"
+"Heroin_Day 1","Lever Presses","Locomotion",0.21046848889979
+"Heroin_Day 1","Lever Presses","Sniffing",0.127981273280463
+"Heroin_Day 1","Lever Presses","Grooming",-0.298047255455926
+"Heroin_Day 1","Lever Presses","Shakes",0.101309380194469
+"Heroin_Day 1","Locomotion","Sniffing",0.648926853205186
+"Heroin_Day 1","Locomotion","Grooming",-0.199760430967481
+"Heroin_Day 1","Locomotion","Shakes",0.342216362786252
+"Heroin_Day 1","Sniffing","Grooming",-0.611149752166058
+"Heroin_Day 1","Sniffing","Shakes",0.138138132998609
+"Heroin_Day 1","Grooming","Shakes",0.286835937077828
+"Sucrose_Day 1","Lever Presses","Locomotion",0.201599425875288
+"Sucrose_Day 1","Lever Presses","Sniffing",0.0260975451575365
+"Sucrose_Day 1","Lever Presses","Grooming",-0.130236680395881
+"Sucrose_Day 1","Lever Presses","Shakes",0.118084325400016
+"Sucrose_Day 1","Locomotion","Sniffing",0.534153154727657
+"Sucrose_Day 1","Locomotion","Grooming",-0.175986175175774
+"Sucrose_Day 1","Locomotion","Shakes",-0.0330478580743205
+"Sucrose_Day 1","Sniffing","Grooming",-0.0752545005151248
+"Sucrose_Day 1","Sniffing","Shakes",-0.166304175053659
+"Sucrose_Day 1","Grooming","Shakes",0.190813426915218
+"Heroin_Day 30","Lever Presses","Locomotion",0.683216197361665
+"Heroin_Day 30","Lever Presses","Sniffing",0.133186478790166
+"Heroin_Day 30","Lever Presses","Grooming",-0.557538691577739
+"Heroin_Day 30","Lever Presses","Shakes",-0.0346361657399727
+"Heroin_Day 30","Locomotion","Sniffing",0.439545391863166
+"Heroin_Day 30","Locomotion","Grooming",-0.575528895144843
+"Heroin_Day 30","Locomotion","Shakes",-0.0577695014865477
+"Heroin_Day 30","Sniffing","Grooming",-0.537140230990479
+"Heroin_Day 30","Sniffing","Shakes",-0.383134966825628
+"Heroin_Day 30","Grooming","Shakes",0.325178905395558
+"Sucrose_Day 30","Lever Presses","Locomotion",0.0689674298512762
+"Sucrose_Day 30","Lever Presses","Sniffing",-0.449420562407464
+"Sucrose_Day 30","Lever Presses","Grooming",-0.293323323941849
+"Sucrose_Day 30","Lever Presses","Shakes",-0.0304770762935843
+"Sucrose_Day 30","Locomotion","Sniffing",0.463194436127799
+"Sucrose_Day 30","Locomotion","Grooming",-0.385149301062153
+"Sucrose_Day 30","Locomotion","Shakes",0.0220333584295107
+"Sucrose_Day 30","Sniffing","Grooming",-0.338107507252286
+"Sucrose_Day 30","Sniffing","Shakes",-0.185751857190755
+"Sucrose_Day 30","Grooming","Shakes",0.087491057311656

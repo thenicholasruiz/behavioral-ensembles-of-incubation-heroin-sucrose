@@ -1,0 +1,5 @@
+"0","sex_labels = c(""Male"",""Female"")"
+"0","names(sex_labels) = c(""1"",""2"")"
+"0",""
+"0","drug_labels = c(""Heroin"",""Sucrose"")"
+"0","names(drug_labels) = c(""1"",""2"")"

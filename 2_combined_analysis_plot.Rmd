@@ -1,0 +1,339 @@
+---
+title: "combined_analysis_plot"
+author: "nicholas ruiz"
+date: "2025-06-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(lme4)
+library(lmerTest)
+library(tidyverse)
+library(cowplot)
+library(readxl)
+library(reghelper)
+```
+
+### prepare dataframes for analysis and figure 3
+
+## import data
+
+```{r import data}
+inc_raw_data = read_excel("inc_all_data_final.xlsx",sheet = "raw_data")
+inc_dbl_scr_hand = read_excel("inc_all_data_final.xlsx",sheet = "double_scored")
+```
+
+```{r double score data}
+# double score the data by averaging across the coders for each rat, session, drug, sex, and timepoint
+
+inc_raw_data %>%
+  group_by(subject,drug,sex,session,time) %>%
+  summarise(beam = mean(beam_breaks,na.rm = TRUE),
+            sniff_cnt = mean(sniff_cnt,na.rm = TRUE),
+            sniff = mean(sniffing,na.rm = TRUE),
+            groom_cnt = mean(groom_cnt,na.rm = TRUE),
+            groom = mean(grooming,na.rm = TRUE),
+            shake = mean(shakes,na.rm = TRUE),
+            seek_cnt = mean(seeking_cnt,na.rm = TRUE),
+            seek = mean(seeking,na.rm = TRUE),
+            lever = mean(lever,na.rm = TRUE)) -> inc_dbl_scr
+
+# inc_dbl_scr$time = as.factor(inc_dbl_scr$time)
+inc_dbl_scr$session = as.factor(inc_dbl_scr$session)
+
+inc_dbl_scr$sex = as.factor(inc_dbl_scr$sex)
+inc_dbl_scr$drug = as.factor(inc_dbl_scr$drug)
+```
+
+```{r df & sneek creation}
+# Prepare the data (sneek calculation and session labels)
+inc_dbl_scr %>%
+  mutate(seek = ifelse(is.nan(seek), 0, seek),
+         sneek = seek + sniff,,
+         sneek_cnt = seek_cnt + sniff_cnt,
+         session = recode(session, `1` = "Day 1", `2` = "Day 30"),
+         drug = recode(drug, `1` = "Heroin", `2` = "Sucrose")) -> inc_sneek
+
+# Filter by drug 
+inc_sneek %>%
+  filter(drug == "Heroin") -> inc_sneek_heroin
+
+inc_sneek %>%
+  filter(drug == "Sucrose") -> inc_sneek_sucrose
+
+inc_sneek_heroin <- as.data.frame(inc_sneek_heroin)
+inc_sneek_sucrose <- as.data.frame(inc_sneek_sucrose)
+
+# Define color scheme for drugs
+session_colors <- c("Day 1" = "deeppink", "Day 30" = "deepskyblue")
+```
+
+```{r}
+test <- lmer(shake ~ session*drug + (1|subject),data = inc_sneek)
+summary(test)
+simple_slopes(test)
+```
+
+
+
+### conducted linear mixed effect models
+
+```{r three-way interaction models}
+lev_beam_sess_3way <- lmer(lever ~ beam*session*drug + (1|subject),data = inc_sneek)
+summary(lev_beam_sess_3way)
+simple_slopes(lev_beam_sess_3way)
+
+lev_groom_sess_3way <- lmer(lever ~ groom*session*drug + (1|subject),data = inc_sneek)
+summary(lev_groom_sess_3way)
+simple_slopes(lev_groom_sess_3way)
+
+lev_sniff_sess_3way <- lmer(lever ~ sneek*session*drug + (1|subject),data = inc_sneek)
+summary(lev_sniff_sess_3way)
+simple_slopes(lev_sniff_sess_3way)
+
+lev_shake_sess_3way <- lmer(lever ~ shake*session*drug + (1|subject),data = inc_sneek)
+summary(lev_shake_sess_3way)
+simple_slopes(lev_shake_sess_3way)
+```
+
+
+```{r locomotion}
+lev_beam_sess_heroin <- lmer(lever ~ beam*session + (1|subject),data = inc_sneek_heroin)
+summary(lev_beam_sess_heroin)
+simple_slopes(lev_beam_sess_heroin)
+
+# locomotion goes up when lever pressing goes up (same across drug)
+# lever pressing goes up across session (same across drug)
+# significant negative interaction (different across drug)
+
+lev_beam_sess_sucrose <- lmer(lever ~ beam*session + (1|subject),data = inc_sneek_sucrose)
+summary(lev_beam_sess_sucrose)
+
+# locomotion goes down when lever pressing goes up (same across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (different across drug)
+
+lev_beam_sess_3way <- lmer(lever ~ beam*session*drug + (1|subject),data = inc_sneek)
+summary(lev_beam_sess_3way)
+simple_slopes(lev_beam_sess_3way)
+
+# no three-way interaction
+```
+
+```{r grooming}
+lev_groom_sess_heroin <- lmer(lever ~ groom*session + (1|subject),data = inc_sneek_heroin)
+summary(lev_groom_sess_heroin)
+simple_slopes(lev_groom_sess_heroin)
+
+# grooming goes down when lever pressing goes up (same across drug)
+# lever pressing goes up across session (same across drug)
+# significant negative interaction (different across drug)
+
+lev_groom_sess_sucrose <- lmer(lever ~ groom*session + (1|subject),data = inc_sneek_sucrose)
+summary(lev_groom_sess_sucrose)
+
+# grooming goes down when lever pressing goes up (same across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (different across drug)
+
+lev_groom_sess_3way <- lmer(lever ~ groom*session*drug + (1|subject),data = inc_sneek)
+summary(lev_groom_sess_3way)
+
+# no three-way interaction
+```
+
+```{r sniffing}
+lev_sniff_sess_heroin <- lmer(lever ~ sneek*session + (1|subject),data = inc_sneek_heroin)
+summary(lev_sniff_sess_heroin)
+
+# sniffing goes up when lever pressing goes up (different across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (different across drug)
+
+lev_sniff_sess_sucrose <- lmer(lever ~ sneek*session + (1|subject),data = inc_sneek_sucrose)
+summary(lev_sniff_sess_sucrose)
+simple_slopes(lev_sniff_sess_sucrose)
+
+# sniffing goes down when lever pressing goes up (different across drug)
+# lever pressing goes up across session (same across drug)
+# significant negative interaction (different across drug)
+
+lev_sniff_sess_3way <- lmer(lever ~ sneek*session*drug + (1|subject),data = inc_sneek)
+summary(lev_sniff_sess_3way)
+
+# significant 3way interaction, effect stronger on day 30 (compared to day 1)
+# effect stronger in sucrose (compared to heroin)
+```
+
+
+```{r shaking}
+lev_shake_sess_heroin <- lmer(lever ~ shake*session + (1|subject),data = inc_sneek_heroin)
+summary(lev_shake_sess_heroin)
+
+# no relationship bw shaking and lever (different across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (same across drug)
+
+lev_shake_sess_sucrose <- lmer(lever ~ shake*session + (1|subject),data = inc_sneek_sucrose)
+summary(lev_shake_sess_sucrose)
+
+# shaking goes down when lever pressing goes up (different across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (same across drug)
+
+lev_shake_sess_3way <- lmer(lever ~ shake*session*drug + (1|subject),data = inc_sneek)
+summary(lev_shake_sess_3way)
+```
+
+### extract data from lmers for plotting
+
+```{r collect data from models for plotting}
+
+library(effects)
+
+# get effect size estimates from model
+effects_groom_h <- as.data.frame(effect(term = "groom:session", mod = lev_groom_sess_heroin)) # etract predicted data from interaction term
+effects_groom_h %>% filter(session == "Day 1") -> effects_groom_h_d1 # split the matrix by session to plot regression lines for both sessions
+effects_groom_h %>% filter(session == "Day 30") -> effects_groom_h_d30
+
+effects_sneek_h <- as.data.frame(effect(term = "sneek:session", mod = lev_sniff_sess_heroin))
+effects_sneek_h %>% filter(session == "Day 1") -> effects_sneek_h_d1
+effects_sneek_h %>% filter(session == "Day 30") -> effects_sneek_h_d30
+
+effects_shake_h <- as.data.frame(effect(term = "shake:session", mod = lev_shake_sess_heroin))
+effects_shake_h %>% filter(session == "Day 1") -> effects_shake_h_d1
+effects_shake_h %>% filter(session == "Day 30") -> effects_shake_h_d30
+
+effects_beam_h <- as.data.frame(effect(term = "beam:session", mod = lev_beam_sess_heroin))
+effects_beam_h %>% filter(session == "Day 1") -> effects_beam_h_d1
+effects_beam_h %>% filter(session == "Day 30") -> effects_beam_h_d30
+
+# get effect size estimates from model
+effects_groom_s <- as.data.frame(effect(term = "groom:session", mod = lev_groom_sess_sucrose))
+effects_groom_s %>% filter(session == "Day 1") -> effects_groom_s_d1
+effects_groom_s %>% filter(session == "Day 30") -> effects_groom_s_d30
+
+effects_sneek_s <- as.data.frame(effect(term = "sneek:session", mod = lev_sniff_sess_sucrose))
+effects_sneek_s %>% filter(session == "Day 1") -> effects_sneek_s_d1
+effects_sneek_s %>% filter(session == "Day 30") -> effects_sneek_s_d30
+
+effects_shake_s <- as.data.frame(effect(term = "shake:session", mod = lev_shake_sess_sucrose))
+effects_shake_s %>% filter(session == "Day 1") -> effects_shake_s_d1
+effects_shake_s %>% filter(session == "Day 30") -> effects_shake_s_d30
+
+effects_beam_s <- as.data.frame(effect(term = "beam:session", mod = lev_beam_sess_sucrose))
+effects_beam_s %>% filter(session == "Day 1") -> effects_beam_s_d1
+effects_beam_s %>% filter(session == "Day 30") -> effects_beam_s_d30
+
+```
+
+### custom function for plot creation
+
+```{r create_plot function}
+# Function to create the plots for a given behavior across a session
+create_plot <- function(data, x_var, x_label, y_label, x_limits, y_limits, effects_mat_h, effects_mat_s, color_pack) {
+  # Ensure the effects matrices are data frames
+  data <- as.data.frame(data)
+  effects_mat_h <- as.data.frame(effects_mat_h)
+  effects_mat_s <- as.data.frame(effects_mat_s)
+  
+  # ggplot function
+  ggplot(data, aes(x = .data[[x_var]], y = lever, color = session, fill = session)) + # lever is always Y for these plots, split by session
+    geom_point(alpha = 0.2) +  # Add individual data points
+    # Day 1 regression line
+    geom_ribbon(data = effects_mat_h, aes(x = .data[[x_var]], y = fit, ymin = lower, ymax = upper), alpha = 0.2, colour = NA) + 
+    geom_line(data = effects_mat_h, aes(x = .data[[x_var]], y = fit), linewidth = 2) +
+    # Day 30 regression line
+    geom_ribbon(data = effects_mat_s, aes(x = .data[[x_var]], y = fit, ymin = lower, ymax = upper), alpha = 0.2, colour = NA) +
+    geom_line(data = effects_mat_s, aes(x = .data[[x_var]], y = fit), linewidth = 2) +
+    scale_color_manual(values = color_pack) +  # Define colors for sessions
+    labs(x = x_label, y = y_label, color = "Session") + 
+    guides(fill="none") +
+    theme(axis.title = element_text(size = 30),
+          axis.text.x = element_text(size = 25),  # Adjust x-axis label text size
+          axis.text.y = element_text(size = 25)) +  # Adjust y-axis label text size
+    coord_cartesian(xlim = x_limits, ylim = y_limits)
+}
+```
+
+### create all plots
+
+```{r plot creation}
+# Create plots for heroin
+p1_h <- create_plot(inc_sneek_heroin, x_var = "beam", x_label = "Locomotion", y_label = "Lever Presses", x_limits = c(0, 50), y_limits = c(0, 10),
+                    effects_beam_h_d1,
+                    effects_beam_h_d30,
+                    session_colors)
+
+
+p2_h <- create_plot(inc_sneek_heroin, "groom", x_label = "Grooming", y_label = "", x_limits = c(0, 300), y_limits = c(-2, 10),
+                    effects_groom_h_d1,
+                    effects_groom_h_d30,
+                    session_colors)
+
+p3_h <- create_plot(inc_sneek_heroin, "sneek", x_label = "Sniffing", y_label = "", x_limits = c(0, 300), y_limits = c(0, 10),
+                    effects_sneek_h_d1,
+                    effects_sneek_h_d30,
+                    session_colors)
+
+p4_h <- create_plot(inc_sneek_heroin, "shake", x_label = "Shaking", y_label = "", x_limits = c(0, 15), y_limits = c(0, 10),
+                    effects_shake_h_d1,
+                    effects_shake_h_d30,
+                    session_colors)
+
+# Create plots for sucrose
+p1_s <- create_plot(inc_sneek_sucrose, "beam", x_label = "Locomotion", y_label = "", x_limits = c(0, 45), y_limits = c(0, 10),
+                    effects_beam_s_d1,
+                    effects_beam_s_d30,
+                    session_colors)
+
+p2_s <- create_plot(inc_sneek_sucrose, "groom", x_label = "Grooming", y_label = "", x_limits = c(0, 300), y_limits = c(-2, 10),
+                    effects_groom_s_d1,
+                    effects_groom_s_d30,
+                    session_colors)
+
+p3_s <- create_plot(inc_sneek_sucrose, "sneek", x_label = "Sniffing", y_label = "", x_limits = c(0, 300), y_limits = c(0, 10),
+                    effects_sneek_s_d1,
+                    effects_sneek_s_d30,
+                    session_colors)
+
+p4_s <- create_plot(inc_sneek_sucrose, "shake", x_label = "Shaking", y_label = "", x_limits = c(0, 15), y_limits = c(0, 10),
+                    effects_shake_s_d1,
+                    effects_shake_s_d30,
+                    session_colors)
+```
+
+### combine and print plots
+
+```{r combine pots}
+# Combine the plots into grids
+h_plots <- cowplot::plot_grid(p1_h, p2_h, p3_h, p4_h, nrow = 1)
+s_plots <- cowplot::plot_grid(p1_s, p2_s, p3_s, p4_s, nrow = 1)
+
+# Create final plot with "Day 1" and "Day 30" labels
+final_plot <- cowplot::plot_grid(
+  ggdraw() + draw_label("Heroin", size = 40, fontface = 'bold'),
+  h_plots,
+  ggdraw() + draw_label("Sucrose", size = 40, fontface = 'bold'),
+  s_plots,
+  ncol = 1,
+  rel_heights = c(0.1, 1, 0.1, 1)
+)
+
+# Show the final plot
+print(final_plot)
+```
+
+### save plot
+
+```{r save plot}
+# Save the final plot as a .png file
+ggsave(filename = "lev_by_beh_by_session_combined.svg", 
+       plot = final_plot,   # Specify the plot object to save
+       width = 20,          # Set the width of the plot (in inches)
+       height = 10,         # Set the height of the plot (in inches)
+       dpi = 300)           # Set the resolution of the plot (300 dpi for high-quality)
+```
+

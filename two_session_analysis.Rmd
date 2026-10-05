@@ -1,0 +1,97 @@
+---
+title: "two_session"
+author: "nicholas ruiz"
+date: "2025-01-16"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lme4)
+```
+
+
+```{r}
+inc_dbl_scr %>%
+  group_by(subject) %>%
+  filter(n() > 7) -> inc_two_sessions
+```
+
+```{r}
+inc_two_sessions %>% 
+  filter(drug == 1) -> two_sess_h
+```
+
+
+```{r}
+library(sjPlot)
+
+twosesh_m1 <- lmer(lever ~ session + drug + time + session:drug + drug:time + session:time + (1|subject),data = inc_two_sessions)
+summary(twosesh_m1)
+
+plot_model(twosesh_m1, type = "int")
+```
+
+```{r}
+library(emmeans)
+library(pbkrtest)
+
+emms <- emmeans(twosesh_m1, ~ session * drug)
+emms_df <- as.data.frame(emms)
+
+# Modify the levels of drug to label them as "Heroin" and "Sucrose"
+emms_df$drug <- factor(emms_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+# Create the plot with customizations
+ggplot(emms_df, aes(x = session, y = emmean, color = drug, group = drug)) +
+  geom_line(size = 2) +  # Change line thickness here
+  geom_point(size = 2) +   # Change point size here
+  labs(x = "Session", y = "Lever Presses", 
+       color = "Drug", 
+       title = "Interaction of Session and Drug on Lever Pressing") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 20), 
+        axis.title = element_text(size = 20)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  # theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 20), 
+        legend.text = element_text(size = 20),
+        axis.text.x = element_text(size = 20),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 20)) + # Adjust y-axis label text size here
+  scale_y_continuous(breaks = 1:7, limits = c(1, 7))
+
+# Resize the plot
+# ggsave("session_drug_interaction_plot.png", width = 16, height = 12)  # Save with specific dimensions
+```
+
+
+```{r day 1 behavior vs day 30 lever presses}
+library(tidyverse)
+
+two_sess <- inc_two_sessions  %>%
+  group_by(subject, drug) %>%
+  summarise(d1_beam = sum(beam[session==1]),
+            d1_sniff = sum(sniff[session==1]),
+            d1_groom = sum(groom[session==1]),
+            d1_shake = sum(shake[session==1]),
+            d30_lever = sum(lever[session==2]))
+
+two_sess_h <- two_sess %>%
+  filter(drug == 1)
+
+two_sess_s <- two_sess %>%
+  filter(drug == 2)
+```
+
+```{r analysis}
+library(lme4)
+library(lmerTest)
+
+two_sess_m2 <- lm(d30_lever ~ d1_beam + d1_sniff + d1_groom + d1_shake, data = two_sess_h)
+summary(two_sess_m2)
+```
+
+
+

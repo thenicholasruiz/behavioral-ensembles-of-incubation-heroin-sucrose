@@ -1,0 +1,137 @@
+---
+title: "classifier"
+author: "nicholas ruiz"
+date: "2025-06-25"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(caret)
+library(mlbench)
+library(tidyverse)
+
+set.seed(100)
+
+# https://www.youtube.com/watch?v=dRqtLxZVRuw
+```
+
+# build class labels
+
+```{r class labels}
+inc_data <- read.csv("inc_dbl_scr.csv")
+
+inc_classifier <- inc_data %>%
+  mutate(session_type = case_when(
+    drug == 1 & session == 1 ~ "h_d1",
+    drug == 1 & session == 2 ~ "h_d30",
+    drug == 2 & session == 1 ~ "s_d1",
+    drug == 2 & session == 2 ~ "s_d30"  
+  )) %>%
+  group_by(subject, session_type) %>%
+  summarise(
+    beam = sum(beam, na.rm = TRUE),
+    groom = sum(groom, na.rm = TRUE),
+    sniff = sum(sniff, na.rm = TRUE),
+    shake = sum(shake, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# clean up dataframe
+inc_classifier<-ungroup(inc_classifier)
+inc_classifier$session_type<-as.factor(inc_classifier$session_type)
+
+sum(is.na(inc_classifier))
+inc_classifier <- as.data.frame(inc_classifier)
+summary(inc_classifier)
+```
+
+# split data
+
+```{r split data}
+# get unique subjects
+unique_subjects <- unique(inc_classifier$subject)
+
+# randomly sample 80% of subjects for training
+train_subjects <- sample(unique_subjects, size = floor(0.8 * length(unique_subjects)))
+
+# use remaining subjects for testing
+test_subjects <- setdiff(unique_subjects, train_subjects)
+
+# subset full dataset by subjects
+trainingSet <- inc_classifier[inc_classifier$subject %in% train_subjects, ]
+testingSet  <- inc_classifier[inc_classifier$subject %in% test_subjects, ]
+
+# remove subject as it messes things up later
+trainingSet <- trainingSet %>%
+  select(-subject)
+
+testingSet <- testingSet %>%
+  select(-subject)
+
+summary(trainingSet)
+summary(testingSet)
+```
+
+# initialize training model and cross validation model
+
+```{r training}
+# build training model
+
+# training model uses training set to build model
+model <- train(session_type ~ ., 
+               data = trainingSet,
+               method = "svmPoly",
+               na.action = na.omit,
+               preProcess=c("scale","center"), # scale and center data
+               trControl = trainControl(method="none"))
+
+# build cross validation model
+# ten-fold cross validation
+# use 80% training data, ten-fold so it will group data into 10 groups
+# it will hold out 1 group, incrementally, to train and then predict the held out group
+# each group is held out once then averaged over the prediction performance 
+model_cv <- train(session_type ~ ., data = trainingSet,
+               method = "svmPoly",
+               na.action = na.omit,
+               preProcess=c("scale","center"),
+               trControl = trainControl(method="cv", number=10),
+               tuneGrid = data.frame(degree = 1, scale = 1, C = 1))
+```
+
+# apply model for prediciton
+
+```{r prediction}
+model_pred_training <- predict(model, trainingSet) # apply model to make prediction on training set
+model_pred_testing <- predict(model, testingSet) # apply model to testing set
+model_pred_cv <- predict(model_cv, trainingSet) # preform cross validation
+```
+
+# test model preformance (display confusion and stats)
+
+```{r confusion}
+model_confusion_training <- confusionMatrix(model_pred_training, trainingSet$session_type) 
+model_confusion_testing <- confusionMatrix(model_pred_testing, testingSet$session_type) 
+model_confusion_cv <- confusionMatrix(model_pred_cv, trainingSet$session_type) 
+
+print(model_confusion_training)
+print(model_confusion_testing)
+print(model_confusion_cv)
+```
+
+# feature importance
+
+```{r feature importance}
+importance <- varImp(model_pred_testing)
+plot(importance)
+plot(importance, col = "red")
+```
+
+
+
+
+

@@ -1,0 +1,170 @@
+---
+title: "inc_sex_differences"
+author: "nicholas ruiz"
+date: "2024-10-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+library(lme4)
+library(lmerTest)
+library(reghelper)
+library(interactions)
+library(cowplot)
+library(effects)
+```
+
+
+## import data
+
+```{r import data}
+inc_raw_data = read_excel("inc_all_data_final.xlsx",sheet = "raw_data")
+inc_dbl_scr_hand = read_excel("inc_all_data_final.xlsx",sheet = "double_scored")
+```
+
+
+# prepare data
+
+```{r}
+inc_dbl_scr  %>%
+  filter(!is.na(sex))  -> inc_sex
+```
+
+
+# model 1: how do drug, session, and sex influence incubation?
+
+```{r}
+sex_m1a <- lmer(lever ~ session + drug + time + session:drug + drug:time + (1|subject),data = inc_sex)
+summary(sex_m1a)
+
+sex_m1b <- lmer(lever ~ session + drug + time + session:drug + drug:time + sex + (1|subject),data = inc_sex)
+summary(sex_m1b)
+
+anova(sex_m1a,sex_m1b)
+```
+
+# model 2: how do the behaviors independently relate to incubation?
+
+```{r}
+sex_m2a <- lmer(lever ~ groom + sniff + shake + beam + (1|subject),data = inc_sex)
+summary(sex_m2a)
+
+sex_m2b <- lmer(lever ~ groom + sniff + shake + beam + sex + (1|subject),data = inc_sex)
+summary(sex_m2b)
+
+anova(sex_m2a,sex_m2b)
+```
+
+# model 3: how do these relationships change across drug?
+
+
+```{r}
+# sniffing by drug interaction first
+sex_m3a <- lmer(lever ~ sniff*drug + (1|subject),data = inc_sex)
+summary(sex_m3a)
+
+sex_m3b <- lmer(lever ~ sniff*drug + sex + (1|subject),data = inc_sex)
+summary(sex_m3b)
+
+anova(sex_m3a,sex_m3b)
+```
+
+```{r}
+# grooming by drug interaction first
+sex_m3c <- lmer(lever ~ groom*drug + (1|subject),data = inc_sex)
+summary(sex_m3c)
+
+sex_m3d <- lmer(lever ~ groom*drug + sex + (1|subject),data = inc_sex)
+summary(sex_m3d)
+
+anova(sex_m3c,sex_m3d)
+```
+
+# model 4: how do these relationship change across drug and session? 
+
+# check 3-way interaction first
+
+```{r}
+sex_m4a <- lmer(lever ~ sniff*session*drug + (1|subject),data = inc_sex)
+summary(sex_m4a)
+
+sex_m4b <- lmer(lever ~ sniff*session*drug + sex + (1|subject),data = inc_sex)
+summary(sex_m4b)
+
+anova(sex_m4a,sex_m4b)
+```
+
+
+# split the data 
+
+```{r}
+inc_sex %>%
+  filter(drug == 1) -> inc_sex_heroin
+
+inc_sex %>%
+  filter(drug == 2) -> inc_sex_sucrose
+```
+
+
+# examine other interactions
+
+```{r}
+# heroin group: locomotion
+
+sex_m4c <- lmer(lever ~ beam*session + (1|subject),data = inc_sex_heroin)
+summary(sex_m4c)
+
+sex_m4d <- lmer(lever ~ beam*session + sex + (1|subject),data = inc_sex_heroin)
+summary(sex_m4d)
+
+anova(sex_m4c,sex_m4d)
+```
+
+
+```{r}
+# heroin group: grooming
+
+sex_m4e <- lmer(lever ~ groom*session + (1|subject),data = inc_sex_heroin)
+summary(sex_m4e)
+
+sex_m4f <- lmer(lever ~ groom*session + sex + (1|subject),data = inc_sex_heroin)
+summary(sex_m4f)
+
+anova(sex_m4e,sex_m4f)
+```
+
+
+```{r}
+# sucrose group: sniffing
+
+sex_m4g <- lmer(lever ~ sniff*session + (1|subject),data = inc_sex_sucrose)
+summary(sex_m4g)
+
+sex_m4h <- lmer(lever ~ sniff*session + sex + (1|subject),data = inc_sex_sucrose)
+summary(sex_m4h)
+
+anova(sex_m4g,sex_m4h)
+```
+
+
+# run hannah's models
+
+```{r}
+# eneuro paper: p = 0.039
+
+sex_m5a <- lmer(groom ~ drug*sex*session + (1|subject), data = inc_sex)
+summary(sex_m5a)
+```
+
+
+```{r}
+# eneuro paper: p = 0.034
+
+sex_m5b <- lmer(lever ~ drug*sex*session + (1|subject), data = inc_sex)
+summary(sex_m5b)
+```
+

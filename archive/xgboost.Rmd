@@ -1,0 +1,95 @@
+---
+title: "xgboost_intro"
+author: "nicholas ruiz"
+date: "2024-10-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(xgboost)
+library(tidyverse)
+library(caret)
+```
+
+# preparing data
+
+```{r}
+# calculate a sneek variable which is sniff + seek
+# for heroin rodents whose seek = NaN, convert to zero
+inc_dbl_scr %>%
+  mutate(seek = ifelse(is.nan(seek), 0 , seek),
+         sneek = seek + sniff) -> inc_ml
+
+inc_ml$drug <- as.numeric(inc_ml$drug)
+inc_ml$sex <- as.numeric(inc_ml$sex)
+inc_ml$session <- as.numeric(inc_ml$session)
+inc_ml$lever <- round(inc_ml$lever)
+
+# prepare factors
+x <- as.matrix(inc_ml[,-c(1,7,9,12:14)]) # rest of df minus lever
+y <- inc_ml$lever # predict lever pressing 
+```
+
+
+# split data into training and test sets
+
+```{r}
+set.seed(123)
+train_idx <- sample(1:nrow(inc_ml), 0.8 * nrow(inc_ml))  # 80% for training
+
+# Create training and test sets
+X_train <- x[train_idx, ]
+y_train <- y[train_idx]
+
+X_test <- x[-train_idx, ]
+y_test <- y[-train_idx]
+```
+
+# train xgboost model
+
+```{r}
+dtrain <- xgb.DMatrix(data = X_train, label = y_train)
+
+# specify model parameters
+params <- list(
+  booster = "gbtree",      # Use tree-based models
+  objective = "multi:softmax",  # Multiclass classification
+  num_class = 12,           # Number of classes (set it based on your data)
+  eta = 0.1,               # Learning rate (smaller values can lead to better accuracy)
+  max_depth = 6,           # Maximum tree depth
+  gamma = 1                # Minimum loss reduction required for splitting
+)
+
+# train the model
+xgb_model <- xgb.train(
+  params = params, 
+  data = dtrain, 
+  nrounds = 1000,  # Number of boosting rounds
+  watchlist = list(train = dtrain), 
+  print_every_n = 100  # Print every 10 rounds
+)
+```
+
+# make predictions and evaluate model
+
+```{r}
+dtest <- xgb.DMatrix(data = X_test)
+
+# Make predictions
+predictions <- predict(xgb_model, dtest)
+
+# Evaluate the accuracy
+accuracy <- sum(predictions == y_test) / length(y_test)
+print(paste("Test Accuracy:", accuracy))
+```
+
+# tuning and feature importance
+
+```{r}
+importance <- xgb.importance(feature_names = colnames(X_train), model = xgb_model)
+xgb.plot.importance(importance)
+```
+
+

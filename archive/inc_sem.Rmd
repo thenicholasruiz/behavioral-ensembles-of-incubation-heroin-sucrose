@@ -1,0 +1,163 @@
+---
+title: "inc_sem"
+author: "nicholas ruiz"
+date: "2024-08-22"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lavaan)
+library(semPlot)
+```
+
+## import data
+
+```{r import data}
+inc_raw_data = read_excel("inc_all_data_final.xlsx",sheet = "raw_data")
+inc_dbl_scr_hand = read_excel("inc_all_data_final.xlsx",sheet = "double_scored")
+```
+
+```{r double score data}
+# double score the data by averaging across the coders for each rat, session, drug, sex, and timepoint
+
+inc_raw_data %>%
+  group_by(subject,drug,sex,session,time) %>%
+  summarise(beam = mean(beam_breaks,na.rm = TRUE),
+            sniff_cnt = mean(sniff_cnt,na.rm = TRUE),
+            sniff = mean(sniffing,na.rm = TRUE),
+            groom_cnt = mean(groom_cnt,na.rm = TRUE),
+            groom = mean(grooming,na.rm = TRUE),
+            shake = mean(shakes,na.rm = TRUE),
+            seek_cnt = mean(seeking_cnt,na.rm = TRUE),
+            seek = mean(seeking,na.rm = TRUE),
+            lever = mean(lever,na.rm = TRUE)) -> inc_dbl_scr_nof
+
+# inc_dbl_scr$time = as.factor(inc_dbl_scr$time)
+# inc_dbl_scr$session = as.factor(inc_dbl_scr$session)
+
+# inc_dbl_scr$sex = as.factor(inc_dbl_scr$sex)
+# inc_dbl_scr$drug = as.factor(inc_dbl_scr$drug)
+```
+
+```{r aggregate across session}
+inc_sessions <- inc_dbl_scr_nof %>%
+  group_by(subject, session, drug) %>%
+  summarise(
+    beam = sum(beam),
+    sniff = sum(sniff),
+    groom = sum(groom),
+    shake = sum(shake),
+    lever = sum(lever)
+  )
+```
+
+## full model with every variable, time, drug, and session acting as moderating variables
+
+```{r}
+# Define the path model
+model <- '
+  # Main effects
+  lever ~ c1*beam + c2*groom + c3*sniff + c4*shake
+  
+  # Moderation effects
+  lever ~ c5*drug + c6*session + c7*time + c8*drug:beam + c9*drug:groom + c10*drug:sniff + c11*drug:shake
+  lever ~ c12*session:beam + c13*session:groom + c14*session:sniff + c15*session:shake
+  lever ~ c16*time:beam + c17*time:groom + c18*time:sniff + c19*time:shake
+
+  # Correlations between independent variables
+  beam ~~ groom
+  beam ~~ sniff
+  beam ~~ shake
+  groom ~~ sniff
+  groom ~~ shake
+  sniff ~~ shake
+'
+
+# Fit the model using the sem() function
+fit <- sem(model, data = inc_dbl_scr_nof)
+
+# Summarize the results
+summary(fit, standardized = TRUE, fit.measures = TRUE)
+```
+
+
+
+```{r}
+# estimates instead of paths only
+semPaths(fit, what='est', 
+         edge.label.cex=1.25, curvePivot = TRUE, 
+         fade=FALSE)
+```
+
+## model without time, data collapsed acorss session, with drug and session acting as moderators
+
+```{r}
+model <- '
+  # Main effects
+  lever ~ c1*beam + c2*groom + c3*sniff + c4*shake
+  
+  # Moderation effects
+  lever ~ c5*drug + c6*session + c7*drug:beam + c8*drug:groom + c9*drug:sniff + c10*drug:shake
+  lever ~ c11*session:beam + c12*session:groom + c13*session:sniff + c14*session:shake
+'
+
+# Fit the model
+fit <- sem(model, data = inc_sessions)
+summary(fit, standardized = TRUE,fit.measures = TRUE)
+
+```
+
+
+```{r}
+# estimates instead of paths only
+semPaths(fit, what='est', 
+         edge.label.cex=1.25, curvePivot = TRUE, 
+         fade=FALSE)
+```
+
+
+## path analysis model without time
+
+```{r}
+# Define the path model
+model <- '
+  # Direct effects
+  lever ~ c1*beam + c2*groom + c3*sniff + c4*session
+  
+  # Direct effects of moderators
+  # lever ~ c4*session + c5*drug
+  
+  # Correlations among independent variables
+  beam ~~ groom
+  beam ~~ sniff
+  groom ~~ sniff
+'
+
+# Fit the model
+fit <- sem(model, data = inc_sessions)
+summary(fit, standardized = TRUE, fit.measures = TRUE)
+
+```
+
+```{r}
+modindices(fit)
+```
+
+
+
+
+```{r}
+# estimates instead of paths only
+semPaths(fit, what='est', 
+         edge.label.cex=1.25, curvePivot = TRUE, 
+         fade=FALSE)
+```
+
+
+```{r}
+
+```
+

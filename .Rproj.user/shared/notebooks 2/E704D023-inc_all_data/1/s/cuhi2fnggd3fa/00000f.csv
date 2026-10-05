@@ -1,0 +1,6 @@
+"0","inc_dbl_scr %>%"
+"0","  group_by(sex,drug,session,time) %>%"
+"0","  summarise(mean_groom = mean(groom,na.rm = TRUE),"
+"0","            sem_groom = sd(groom,na.rm = TRUE)/sqrt(length(groom))) -> mean_groom"
+"2","`summarise()` has grouped output by 'sex', 'drug', 'session'. You can override using the `.groups` argument."
+"0","mean_groom$session = as.factor(mean_groom$session)"

@@ -1,0 +1,651 @@
+---
+title: "inc_analysis"
+author: "nicholas ruiz"
+date: "2024-09-15"
+output: html_document
+---
+
+# this file replaces '1_inc_analysis' by including the 'sneek' variable in place of 'sniff' where applicable
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+library(lme4)
+library(lmerTest)
+library(reghelper)
+library(interactions)
+```
+
+## import data
+
+```{r import data}
+inc_raw_data = read_excel("inc_all_data_final.xlsx",sheet = "raw_data")
+inc_dbl_scr_hand = read_excel("inc_all_data_final.xlsx",sheet = "double_scored")
+```
+
+```{r double score data}
+# double score the data by averaging across the coders for each rat, session, drug, sex, and timepoint
+
+inc_raw_data %>%
+  group_by(subject,drug,sex,session,time) %>%
+  summarise(beam = mean(beam_breaks,na.rm = TRUE),
+            sniff_cnt = mean(sniff_cnt,na.rm = TRUE),
+            sniff = mean(sniffing,na.rm = TRUE),
+            groom_cnt = mean(groom_cnt,na.rm = TRUE),
+            groom = mean(grooming,na.rm = TRUE),
+            shake = mean(shakes,na.rm = TRUE),
+            seek_cnt = mean(seeking_cnt,na.rm = TRUE),
+            seek = mean(seeking,na.rm = TRUE),
+            lever = mean(lever,na.rm = TRUE)) -> inc_dbl_scr
+
+# inc_dbl_scr$time = as.factor(inc_dbl_scr$time)
+inc_dbl_scr$session = as.factor(inc_dbl_scr$session)
+
+inc_dbl_scr$sex = as.factor(inc_dbl_scr$sex)
+inc_dbl_scr$drug = as.factor(inc_dbl_scr$drug)
+
+# create inc_sneek
+inc_dbl_scr %>%
+  mutate(seek = ifelse(is.nan(seek), 0, seek),
+         sneek = seek + sniff,
+         sneek_cnt = seek_cnt + sniff_cnt) -> inc_sneek
+```
+
+
+
+## How do drug and session relate to lever pressing?
+
+```{r}
+lev_m1 <- lmer(lever ~ session + (1|subject),data = inc_sneek)
+
+lev_m2 <- lmer(lever ~ session + drug + (1|subject),data = inc_sneek)
+anova(lev_m1,lev_m2)
+
+# model 2 wins
+```
+
+```{r}
+lev_m3 <- lmer(lever ~ session + drug + time + (1|subject),data = inc_sneek)
+anova(lev_m3,lev_m2)
+
+# model 3 wins
+
+lev_m4 <- lmer(lever ~ session * drug + time + (1|subject),data = inc_sneek)
+anova(lev_m4,lev_m3)
+
+# model 4 wins
+```
+
+```{r}
+lev_m5 <- lmer(lever ~ session + drug + time + session:drug + drug:time + (1|subject),data = inc_sneek)
+anova(lev_m5,lev_m4)
+
+# model 5 winner
+
+lev_m6 <- lmer(lever ~ session + drug + time + session:drug + drug:time + session:time + (1|subject),data = inc_sneek)
+anova(lev_m6,lev_m5)
+
+# model 5 and 6 not different
+
+lev_m7 <- lmer(lever ~ session * drug * time + (1|subject),data = inc_sneek)
+anova(lev_m5,lev_m7)
+summary(lev_m7)
+```
+
+```{r}
+# revision: reviewer 1 comment 4
+lev_m5 <- lmer(lever ~ session + drug + time + session:drug + drug:time + (1|subject),data = inc_sneek)
+
+
+lev_m5_rev <- lmer(lever ~ session*drug + drug*time + (1|subject),data = inc_sneek)
+summary(lev_m5)
+anova(lev_m5)
+summary(lev_m5_rev)
+anova(lev_m5_rev)
+```
+
+
+
+```{r}
+summary(lev_m7)
+simple_slopes(lev_m7)
+interact_plot(model = lev_m7, pred = "time", modx = "session")
+```
+
+```{r winning model summary}
+summary(lev_m5)
+simple_slopes(lev_m5, levels=list(drug=c(1,2,'sstest'),time=c(1,2,3,4,5,6,'sstest')))
+```
+
+```{r}
+sim_slopes(model = lev_m5, pred = "session", modx = "drug")
+interact_plot(model = lev_m5, pred = "session", modx = "drug", interval = TRUE)
+
+# lever pressing incubating more for heroin than sucrose (sucrose higher overall)
+```
+
+```{r fig 1a}
+library(emmeans)
+library(pbkrtest)
+library(tidyverse)
+library(lmerTest)
+
+lev_fig1_df <- inc_sneek %>%
+  mutate(reward = case_when(drug == 1 ~ "Heroin",
+                            drug == 2 ~ "Sucrose"))
+
+lev_fig1 <- lmer(lever ~ session*reward + reward*time + (1|subject),data = lev_fig1_df)
+summary(lev_fig1)
+
+emms <- emmeans(lev_fig1, ~ session * reward)
+emms_df <- as.data.frame(emms)
+
+# Modify the levels of drug to label them as "Heroin" and "Sucrose"
+# emms_df$drug <- factor(emms_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+# Create the plot with customizations
+ggplot(emms_df, aes(x = session, y = emmean, color = reward, group = reward)) +
+  geom_line(linewidth = 10) +  # Change line thickness here
+  geom_point(size = 15) +   # Change point size here
+  labs(x = "Session", y = "Lever Presses", 
+       color = "Drug", 
+       title = "") + # Interaction of Session and Drug on Lever Pressing
+  theme_minimal() +
+  theme(plot.title = element_text(size = 50), 
+        axis.title = element_text(size = 50)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  # theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 40), 
+        legend.text = element_text(size = 40),
+        axis.text.x = element_text(size = 40),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 40)) + # Adjust y-axis label text size here
+  scale_y_continuous(breaks = 1:7, limits = c(1, 7))
+
+# Resize the plot
+ggsave("session_drug_interaction_plot.png", width = 16, height = 12)  # Save with specific dimensions
+
+ggsave("fig1a.svg", width = 16, height = 12)  # Save with specific dimensions
+```
+
+
+```{r}
+sim_slopes(model = lev_m5, pred = "time", modx = "drug")
+interact_plot(model = lev_m5, pred = "time", modx = "drug", interval = TRUE)
+
+# lever pressing decreasing faster for sucrose
+```
+
+```{r fig 1b}
+library(emmeans)
+library(ggplot2)
+
+summary(lev_fig1)
+
+# Create a sequence of 'time' values to predict for (adjust the range as needed)
+time_values <- seq(min(lev_fig1_df$time), max(lev_fig1_df$time), length.out = 100)
+
+# Get estimated marginal means for the interaction between time and drug
+emms_time_drug <- emmeans(lev_fig1, ~ time * reward, at = list(time = time_values))
+
+# Convert to a data frame for plotting
+emms_time_drug_df <- as.data.frame(emms_time_drug)
+
+# Modify the drug factor to label them as "Heroin" and "Sucrose"
+emms_time_drug_df$reward <- factor(emms_time_drug_df$reward) # , levels = c(1, 2), labels = c("Heroin", "Sucrose")
+
+# Plot using ggplot2, adding confidence intervals and showing all x-axis labels
+ggplot(emms_time_drug_df, aes(x = time, y = emmean, color = reward, group = reward)) +
+  # Add confidence intervals using geom_ribbon (shaded area)
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL, fill = reward), alpha = 0.5, color = NA) +
+  geom_line(size = 5) +  # Line thickness
+  labs(x = "Time", y = "Lever Presses", 
+       color = "Drug", fill = "Drug", 
+       title = "") + # Interaction of Time and Drug on Lever Pressing
+  theme_minimal() +
+  theme(plot.title = element_text(size = 50), 
+        axis.title = element_text(size = 50)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  scale_fill_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +  # Match line color for confidence interval
+  # theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 40), 
+        legend.text = element_text(size = 40),
+        axis.text.x = element_text(size = 40),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 40)) + # Adjust y-axis label text size here
+  scale_x_continuous(breaks = 1:6) + # Ensure all x-axis labels are shown
+  scale_y_continuous(breaks = 1:7)
+
+# Resize the plot (optional)
+ggsave("time_drug_interaction_with_CI_plot.png", width = 16, height = 12)
+
+ggsave("fig1b.svg", width = 16, height = 12)
+```
+
+
+
+# examine drug by time interactions on lever pressing by session
+
+```{r}
+library(emmeans)
+library(ggplot2)
+
+# Create a sequence of 'time' values to predict for (adjust the range as needed)
+time_values <- seq(min(inc_sneek$time), max(inc_sneek$time), length.out = 100)
+
+# Get estimated marginal means for the interaction between time and drug for session = 1
+emms_time_drug_s1 <- emmeans(lev_m5, ~ time * drug, at = list(time = time_values, session = "1"))
+
+# Convert to a data frame for plotting
+emms_time_drug_s1_df <- as.data.frame(emms_time_drug_s1)
+
+# Modify the drug factor to label them as "Heroin" and "Sucrose"
+emms_time_drug_s1_df$drug <- factor(emms_time_drug_s1_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+# Plot for session = 1
+ggplot(emms_time_drug_s1_df, aes(x = time, y = emmean, color = drug, group = drug)) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL, fill = drug), alpha = 0.2, color = NA) +
+  geom_line(size = 1.5) +
+  labs(x = "Time", y = "Lever Presses", color = "Drug", fill = "Drug", title = "Drug x Time Interaction (Day 1)") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 16), axis.title = element_text(size = 14)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  scale_fill_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 15), legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12)) +
+  scale_x_continuous(breaks = 1:6) +
+  scale_y_continuous(breaks = 1:7)
+
+# Save the plot for session 1
+ggsave("time_drug_interaction_session1_with_CI_plot.png", width = 8, height = 6)
+
+# Repeat for session = 2
+emms_time_drug_s2 <- emmeans(lev_m5, ~ time * drug, at = list(time = time_values, session = "2"))
+emms_time_drug_s2_df <- as.data.frame(emms_time_drug_s2)
+emms_time_drug_s2_df$drug <- factor(emms_time_drug_s2_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+ggplot(emms_time_drug_s2_df, aes(x = time, y = emmean, color = drug, group = drug)) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL, fill = drug), alpha = 0.2, color = NA) +
+  geom_line(size = 1.5) +
+  labs(x = "Time", y = "Lever Presses", color = "Drug", fill = "Drug", title = "Drug x Time Interaction (Day 30)") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 16), axis.title = element_text(size = 14)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  scale_fill_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 15), legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12)) +
+  scale_x_continuous(breaks = 1:6) +
+  scale_y_continuous(breaks = 1:7)
+
+# Save the plot for session 2
+ggsave("time_drug_interaction_session2_with_CI_plot.png", width = 8, height = 6)
+
+```
+
+
+
+### How do the other behaviors independently relate to lever pressing, regardless of drug and session?
+
+```{r}
+lev_groom <- lmer(lever ~ groom + (1|subject),data = inc_sneek)
+summary(lev_groom)
+
+# grooming goes down when lever pressing goes up
+```
+
+
+
+```{r}
+lev_sniff <- lmer(lever ~ sniff + (1|subject),data = inc_sneek)
+summary(lev_sniff)
+
+# sniffing marginally goes down when lever pressing goes up
+```
+
+```{r}
+lev_beam <- lmer(lever ~ beam + (1|subject),data = inc_sneek)
+summary(lev_beam)
+
+# locomotion goes up when lever pressing goes up
+```
+
+```{r}
+lev_shake <- lmer(lever ~ shake + (1|subject),data = inc_sneek)
+summary(lev_shake)
+
+# shaking goes down when lever pressing goes up
+```
+
+
+```{r}
+lev_seek <- lmer(lever ~ sneek + (1|subject),data = inc_sneek)
+summary(lev_seek)
+
+# seeking not related to lever pressing
+```
+
+
+# do things change when all the variables are in the same model?
+
+```{r}
+library(sjPlot)
+
+lev_all_ind <- lmer(lever ~ groom + sneek + shake + beam + (1|subject),data = inc_sneek)
+summary(lev_all_ind)
+
+# when combined, all results hold
+
+plot_model(lev_all_ind, type = 'pred')
+```
+
+### plot fig 2
+
+```{r}
+library(effects)
+library(lme4)
+library(lmerTest)
+
+lev_all_ind <- lmer(lever ~ groom + sneek + shake + beam + (1|subject),data = inc_sneek)
+summary(lev_all_ind)
+
+# get effect size estimates from model
+effects_groom_fig2 <- as.data.frame(effect(term = "groom", mod = lev_all_ind)) 
+effects_sniff_fig2 <- as.data.frame(effect(term = "sneek", mod = lev_all_ind)) 
+effects_beam_fig2 <- as.data.frame(effect(term = "beam", mod = lev_all_ind)) 
+effects_shake_fig2 <- as.data.frame(effect(term = "shake", mod = lev_all_ind)) 
+
+# Define color scheme for drugs
+fig2_colors <- "lightgreen"
+```
+
+
+```{r}
+# fig2_colors should be a named vector whose names match the strings
+# you pass in for x_var, e.g.:
+fig2_colors <- c(beam = "#F8766D", sneek = "#00BFC4",
+                 groom = "#7CAE00", shake = "#C77CFF")
+
+create_fig2 <- function(data, x_var,
+                        x_label, y_label,
+                        x_limits, y_limits,
+                        effects_mat,
+                        fig2_colors,
+                        point_col = "grey50") {
+
+  # Pick the colour that corresponds to the x-variable
+  this_col <- fig2_colors[[x_var]]
+
+  ggplot() +
+    ## points (NOT coloured by session or x_var)
+    geom_point(
+      data = data,
+      aes(x = .data[[x_var]], y = lever),
+      alpha = 0.2,
+      colour = point_col
+    ) +
+
+    ## ribbon (keeps y = fit as you requested)
+    geom_ribbon(
+      data = effects_mat,
+      aes(x = .data[[x_var]], y = fit,
+          ymin = lower, ymax = upper),
+      fill   = this_col,   # constant fill chosen above
+      colour = NA,         # no border
+      alpha  = 0.2
+    ) +
+
+    ## line (same constant colour)
+    geom_line(
+      data = effects_mat,
+      aes(x = .data[[x_var]], y = fit),
+      colour   = this_col,
+      linewidth = 2
+    ) +
+
+    labs(x = x_label, y = y_label) +
+
+    # keep axes and theme
+    theme(
+      axis.title = element_text(size = 30),
+      axis.text  = element_text(size = 25)
+    ) +
+
+    coord_cartesian(xlim = x_limits, ylim = y_limits)
+  
+}
+```
+
+
+```{r fig 2}
+library(cowplot)
+
+# beam
+fig2_beam <- create_fig2(inc_sneek, "beam", "Locomotion", "Lever Presses", c(0,50), c(0,10), effects_beam_fig2, fig2_colors)
+
+# groom
+fig2_groom <- create_fig2(inc_sneek, "groom", "Grooming", "Lever Presses", c(0,300), c(0,10), effects_groom_fig2, fig2_colors)
+
+# sniff
+fig2_sniff <- create_fig2(inc_sneek, "sneek", "Sniffing", "Lever Presses", c(0,300), c(0,10), effects_sniff_fig2, fig2_colors)
+
+# shake
+fig2_shake <- create_fig2(inc_sneek, "shake", "Shaking", "Lever Presses", c(0,20), c(0,10), effects_shake_fig2, fig2_colors)
+
+# Combine the plots into grids
+fig2_combined <- plot_grid(fig2_beam, fig2_groom, fig2_sniff, fig2_shake, nrow = 1)
+
+# Create final plot with "Heroin" and "Sucrose" labels
+fig2_final <- plot_grid(
+  ggdraw() + draw_label("Behavioral Profile Associated with Incubation", size = 25, fontface = 'bold'),
+  fig2_combined,
+  ncol = 1,
+  rel_heights = c(0.1, 1, 0.1, 1)
+)
+
+# Show the final plot
+print(fig2_final)
+
+# Save the final plot as a .png file
+ggsave(filename = "fig2.svg", 
+        plot = fig2_final,   # Specify the plot object to save
+        width = 20,          # Set the width of the plot (in inches)
+        height = 8,          # Set the height of the plot (in inches)
+        dpi = 300)           # Set the resolution of the plot (300 dpi for high-quality)
+
+# Save the final plot as a .png file
+# ggsave(filename = "lev_by_beh_cowplot.png", 
+#        plot = final_plot,   # Specify the plot object to save
+#        width = 20,          # Set the width of the plot (in inches)
+#        height = 5,          # Set the height of the plot (in inches)
+#        dpi = 300)           # Set the resolution of the plot (300 dpi for high-quality)
+```
+
+# test of ggplot's smooth function
+
+```{r}
+inc_sneek %>%
+  pivot_longer(c(beam,groom,sneek,shake), names_to = "behavior", values_to = "response") %>%
+  # Modify the behavior levels to desired labels
+  mutate(behavior = factor(behavior, 
+                           levels = c("beam", "groom", "sneek", "shake"), 
+                           labels = c("Beam Breaks", "Grooming", "Sniffing", "Shaking"))) %>%
+  ggplot(aes(x = response, y = lever)) + 
+  geom_point(alpha = 1/10) +
+  geom_smooth(method = lm, formula = y~x) + 
+  facet_wrap(vars(behavior), ncol=2, scales = "free_x") + 
+  labs(x = "Behaviors", 
+       y = "Lever Presses",
+       title = "Behavioral Profile Associated with Lever Pressing") +
+  theme(plot.title = element_text(size = 16), 
+        axis.title = element_text(size = 14)) +
+  theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(axis.text.x = element_text(size = 12),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 12))  # Adjust y-axis label text size here
+
+# Resize the plot (optional)
+# ggsave("lev_by_beh.png", width = 8, height = 6)
+```
+
+
+
+### re-doing figure 2 as a correlation map
+
+
+```{r}
+library(dplyr)
+library(corrplot)
+
+# Step 1: Subject-level means
+subject_means <- inc_sneek %>%
+  group_by(subject) %>%
+  summarise(across(c(lever, beam, sneek, groom, shake), mean, na.rm = TRUE))
+
+# Step 2: Compute correlation matrix
+cor_matrix <- cor(subject_means[, -1], use = "pairwise.complete.obs")
+
+# Step 3: Rename the row and column names
+colnames(cor_matrix) <- c("Lever Presses", "Locomotion", "Sniffing", "Grooming", "Shakes")
+rownames(cor_matrix) <- c("Lever Presses", "Locomotion", "Sniffing", "Grooming", "Shakes")
+
+# Step 4: Plot only the bottom half
+
+corrplot(
+  cor_matrix,
+  method = "color",          # color-filled tiles
+  type = "lower",            # only show lower triangle
+  addCoef.col = "black",     # show correlation values
+  tl.col = "black",          # axis label color
+  tl.cex = 1.2,              # axis label size
+  number.cex = 1.1,          # text size for coefficients
+  diag = TRUE               # remove diagonal
+)
+
+```
+
+# correlational heat map across four conditions
+
+```{r}
+library(tidyverse)
+library(corrplot)
+
+# Define custom labels
+var_labels <- c("Lever Presses", "Locomotion", "Sniffing", "Grooming", "Shakes")
+
+# Step 1: Get all combinations of drug and session
+combinations <- expand.grid(
+  drug = c("Heroin", "Sucrose"),
+  session = c("Day 1", "Day 30"),
+  stringsAsFactors = FALSE
+)
+
+# Step 2: Set up plotting area
+png("correlation_maps_by_drug_session.png", width = 1200, height = 1200, res = 200)
+par(mfrow = c(2, 2), mar = c(2, 2, 4, 2))  # 2x2 layout with space for titles
+
+# Step 3: Loop through each combination
+for (i in 1:nrow(combinations)) {
+  d <- combinations$drug[i]
+  s <- combinations$session[i]
+  
+  # Filter and compute subject-level means
+  df_sub <- inc_sneek %>%
+    filter(drug == d, session == s) %>%
+    group_by(subject) %>%
+    summarise(across(c(lever, beam, sneek, groom, shake), mean, na.rm = TRUE), .groups = "drop")
+  
+  # Compute correlation matrix
+  cor_matrix <- cor(df_sub[, -1], use = "pairwise.complete.obs")
+  
+  # Set axis labels
+  colnames(cor_matrix) <- var_labels
+  rownames(cor_matrix) <- var_labels
+  
+  # Plot
+  corrplot(
+    cor_matrix,
+    method = "color",
+    type = "lower",
+    addCoef.col = "black",
+    tl.col = "black",
+    tl.cex = 0.7,
+    t.srt = 45,
+    number.cex = 0.9,
+    diag = FALSE,
+    title = paste0(d, " - ", s),
+    mar = c(0, 0, 2, 0)  # margin for title
+  )
+}
+
+# Step 4: Close PNG device
+dev.off()
+
+```
+
+# get full stats of correlations
+
+```{r}
+library(tidyverse)
+library(corrplot)
+
+# Labels
+var_labels <- c("Lever Presses", "Locomotion", "Sniffing", "Grooming", "Shakes")
+
+# All condition combinations
+combinations <- expand.grid(
+  drug = c("Heroin", "Sucrose"),
+  session = c("Day 1", "Day 30"),
+  stringsAsFactors = FALSE
+)
+
+# Initialize list to store correlation matrices
+cor_matrices <- list()
+
+# Loop through combinations and store correlations
+for (i in 1:nrow(combinations)) {
+  d <- combinations$drug[i]
+  s <- combinations$session[i]
+  label <- paste(d, s, sep = "_")
+  
+  df_sub <- inc_sneek %>%
+    filter(drug == d, session == s) %>%
+    group_by(subject) %>%
+    summarise(across(c(lever, beam, sneek, groom, shake), mean, na.rm = TRUE), .groups = "drop")
+  
+  cor_matrix <- cor(df_sub[, -1], use = "pairwise.complete.obs")
+  
+  colnames(cor_matrix) <- var_labels
+  rownames(cor_matrix) <- var_labels
+  
+  # Store matrix
+  cor_matrices[[label]] <- cor_matrix
+}
+```
+
+# export to .csv
+
+```{r}
+# Function to flatten lower triangle of a correlation matrix
+flatten_corr <- function(mat, condition_label) {
+  combs <- combn(rownames(mat), 2)
+  data.frame(
+    Condition = condition_label,
+    Var1 = combs[1, ],
+    Var2 = combs[2, ],
+    r = mapply(function(x, y) mat[x, y], combs[1, ], combs[2, ])
+  )
+}
+
+# Apply to all matrices and bind into one data frame
+cor_flat_df <- purrr::imap_dfr(cor_matrices, flatten_corr)
+
+# View or save
+print(cor_flat_df)
+write.csv(cor_flat_df, "correlations_by_condition.csv", row.names = FALSE)
+```
+
+
+
+
+

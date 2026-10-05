@@ -1,0 +1,59 @@
+---
+title: "3_demo_table"
+author: "nicholas ruiz"
+date: "2025-09-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+```{r df creation}
+# create inc_sessions if not already
+
+inc_sessions <- inc_sneek %>%
+  group_by(subject, session) %>%
+  summarise(
+    drug = first(drug),  # or use unique(drug)[1] if unsure
+    sex = first(sex),
+    across(where(is.numeric), mean, na.rm = TRUE),
+    .groups = "drop"
+  )
+```
+
+```{r}
+library(janitor)
+
+# Tabulate sex by drug and session
+inc_sessions %>%
+  tabyl(drug, session, sex)
+```
+
+```{r}
+library(gt)
+library(dplyr)
+
+demographics_table <- inc_sessions %>%
+  count(drug, session, sex) %>%
+  arrange(drug, session, sex)
+
+print(demographics_table)
+
+demographics_table %>%
+  gt() %>%
+  tab_header(
+    title = "Demographic Breakdown by Drug, Session, and Sex"
+  )
+```
+
+
+```{r}
+inc_sessions %>%
+  distinct(subject, sex) %>%  # collapse to unique subjects
+  count(sex)
+```
+
+

@@ -1,0 +1,6 @@
+"0","inc_dbl_scr %>%"
+"0","  group_by(sex,drug,session,time) %>%"
+"0","  summarise(mean_shake = mean(shake,na.rm = TRUE),"
+"0","            sem_shake = sd(shake,na.rm = TRUE)/sqrt(length(shake))) -> mean_shake"
+"2","`summarise()` has grouped output by 'sex', 'drug', 'session'. You can override using the `.groups` argument."
+"0","mean_shake$session = as.factor(mean_shake$session)"

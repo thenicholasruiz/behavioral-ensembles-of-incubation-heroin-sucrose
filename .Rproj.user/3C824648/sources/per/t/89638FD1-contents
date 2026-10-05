@@ -1,0 +1,292 @@
+---
+title: "inc_plots"
+author: "nicholas ruiz"
+date: "2024-04-25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+```
+
+
+
+```{r import data}
+inc_raw_data = read_excel("inc_all_data_final.xlsx",sheet = "raw_data")
+inc_dbl_scr_hand = read_excel("inc_all_data_final.xlsx",sheet = "double_scored")
+```
+
+
+
+```{r double score data}
+# double score the data by averaging across the coders for each rat, session, drug, sex, and timepoint
+
+inc_raw_data %>%
+  group_by(subject,drug,sex,session,time) %>%
+  summarise(beam = mean(beam_breaks,na.rm = TRUE),
+            sniff_cnt = mean(sniff_cnt,na.rm = TRUE),
+            sniff = mean(sniffing,na.rm = TRUE),
+            groom_cnt = mean(groom_cnt,na.rm = TRUE),
+            groom = mean(grooming,na.rm = TRUE),
+            shake = mean(shakes,na.rm = TRUE),
+            seek_cnt = mean(seeking_cnt,na.rm = TRUE),
+            seek = mean(seeking,na.rm = TRUE),
+            lever = mean(lever,na.rm = TRUE)) -> inc_dbl_scr
+
+inc_dbl_scr$time = as.factor(inc_dbl_scr$time)
+inc_dbl_scr$session = as.factor(inc_dbl_scr$session)
+
+inc_dbl_scr$sex = as.factor(inc_dbl_scr$sex)
+inc_dbl_scr$drug = as.factor(inc_dbl_scr$drug)
+```
+
+
+
+```{r data organzation}
+# calculate within session means and sems for plotting
+
+inc_dbl_scr %>%
+  group_by(sex,drug,session,time) %>%
+  summarise(mean_lever = mean(lever,na.rm = TRUE),
+            sem_lever = sd(lever,na.rm = TRUE)/sqrt(length(lever)),
+            mean_beam = mean(beam,na.rm = TRUE),
+            sem_beam = sd(beam,na.rm = TRUE)/sqrt(length(beam)),
+            mean_sniff = mean(sniff,na.rm = TRUE),
+            sem_sniff = sd(sniff,na.rm = TRUE)/sqrt(length(sniff)),
+            mean_groom = mean(groom,na.rm = TRUE),
+            sem_groom = sd(groom,na.rm = TRUE)/sqrt(length(groom)),
+            mean_seek = mean(seek,na.rm = TRUE),
+            sem_seek = sd(seek,na.rm = TRUE)/sqrt(length(seek)),
+            mean_shake = mean(shake,na.rm = TRUE),
+            sem_shake = sd(shake,na.rm = TRUE)/sqrt(length(shake)),
+            mean_sniff_cnt = mean(sniff_cnt,na.rm = TRUE),
+            sem_sniff_cnt = sd(sniff_cnt,na.rm = TRUE)/sqrt(length(sniff_cnt)),
+            mean_groom_cnt = mean(groom_cnt,na.rm = TRUE),
+            sem_groom_cnt = sd(groom_cnt,na.rm = TRUE)/sqrt(length(groom_cnt)),
+            mean_seek_cnt = mean(seek_cnt,na.rm = TRUE),
+            sem_seek_cnt = sd(seek_cnt,na.rm = TRUE)/sqrt(length(seek_cnt))) -> means_sems_all
+
+means_sems_all$session = as.factor(means_sems_all$session)
+```
+
+
+
+```{r labels}
+sex_labels = c("Male","Female")
+names(sex_labels) = c("1","2")
+
+drug_labels = c("Heroin","Sucrose")
+names(drug_labels) = c("1","2")
+```
+
+# plots!
+
+```{r lever plotting}
+means_sems_all %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_lever, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_lever-sem_lever,ymax=mean_lever+sem_lever),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(drug~sex,
+             labeller = labeller(drug=drug_labels,sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Lever Presses by Drug, Sex, and Session",
+        x ="Time", y = "Lever Presses")
+```
+
+```{r lever plotting}
+means_sems_all %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_beam, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_beam-sem_beam,ymax=mean_beam+sem_beam),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(drug~sex,
+             labeller = labeller(drug=drug_labels,sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Beam Breaks by Drug, Sex, and Session",
+        x ="Time", y = "Lever Presses")
+```
+
+```{r}
+mBeam <- aov(beam ~ session * sex * drug,data=inc_dbl_scr)
+
+summary(mBeam)
+```
+
+
+```{r sniff plotting}
+means_sems_all %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_sniff, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_sniff-sem_sniff,ymax=mean_sniff+sem_sniff),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(drug~sex,
+             labeller = labeller(drug=drug_labels,sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Sniffing Behavior by Drug, Sex, and Session",
+        x ="Time", y = "Sniffing (seconds)")
+```
+
+
+```{r}
+mSniff <- aov(sniff ~ session * sex * drug,data=inc_dbl_scr)
+
+summary(mSniff)
+```
+
+
+
+
+```{r grooming plotting}
+means_sems_all %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_groom, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_groom-sem_groom,ymax=mean_groom+sem_groom),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(drug~sex,
+             labeller = labeller(drug=drug_labels,sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Grooming Behavior by Drug, Sex, and Session",
+        x ="Time", y = "Grooming (seconds)")
+```
+
+```{r}
+mGroom <- aov(groom ~ session * sex * drug,data=inc_dbl_scr)
+
+summary(mGroom)
+```
+
+
+
+```{r shaking plotting}
+means_sems_all %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_shake, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_shake-sem_shake,ymax=mean_shake+sem_shake),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(drug~sex,
+             labeller = labeller(drug=drug_labels,sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Wet Dog Shakes by Drug, Sex, and Session",
+        x ="Time", y = "Shakes")
+```
+
+
+
+```{r seeking plotting}
+means_sems_all %>%
+  filter(drug == 2) %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_seek, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_seek-sem_seek,ymax=mean_seek+sem_seek),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(~sex,
+             labeller = labeller(sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Sucrose Seeking by Sex and Session",
+        x ="Time", y = "Seeking (seconds)")
+```
+
+
+
+# count of iniations plots
+
+
+```{r sniff plotting}
+means_sems_all %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_sniff_cnt, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_sniff_cnt-sem_sniff_cnt,ymax=mean_sniff_cnt+sem_sniff_cnt),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(drug~sex,
+             labeller = labeller(drug=drug_labels,sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Sniffing Iniations by Drug, Sex, and Session",
+        x ="Time", y = "Sniffing Iniations")
+```
+
+
+
+```{r grooming plotting}
+means_sems_all %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_groom_cnt, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_groom_cnt-sem_groom_cnt,ymax=mean_groom_cnt+sem_groom_cnt),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(drug~sex,
+             labeller = labeller(drug=drug_labels,sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Grooming Iniations by Drug, Sex, and Session",
+        x ="Time", y = "Grooming Iniations")
+```
+
+
+
+```{r seeking plotting}
+means_sems_all %>%
+  filter(drug == 2) %>%
+  filter(sex == 1 | sex == 2) %>%
+  ggplot(mapping = aes(x = time, y = mean_seek_cnt, fill = session)) + 
+  geom_col(position = "dodge") + 
+  geom_errorbar(aes(ymin=mean_seek_cnt-sem_seek_cnt,ymax=mean_seek_cnt+sem_seek_cnt),width=0.2,
+                position=position_dodge(1)) +
+  facet_wrap(~sex,
+             labeller = labeller(sex=sex_labels)) +  
+  scale_x_discrete(name ="Time", 
+                    limits=c("1","2","3","4","5","6")) + 
+  scale_fill_discrete(labels=c("Day 1", "Day 30")) +
+  labs(title="Sucrose Seeking Iniations by Sex and Session",
+        x ="Time", y = "Seeking Iniations")
+```
+
+
+```{r}
+# what about session 1 predicts session 2
+inc_dbl_scr %>%
+  mutate(drug_inc = case_when(drug == 2 & session == 2 ~ 2,
+                              drug == 2 & session == 1 ~ 1,
+                              drug == 1 & session == 1 ~ 1,
+                              drug == 1 & session == 2 ~ 1,)) ->inc_dbl_scr
+
+# rats with both sessions
+# predictors at day 1 of day 2 behavior
+inc_dbl_scr %>%
+  group_by(subject) %>%
+  filter(all(c(1, 2) %in% session)) -> two_sesh
+```
+
+```{r}
+m1 <- lmer(lever ~ shake:drug_inc + beam:drug_inc + sniff:drug_inc + groom:drug_inc  + (1|subject),data=inc_dbl_scr)
+summary(m1)
+```
+
+
+
+

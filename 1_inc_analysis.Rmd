@@ -1,0 +1,1268 @@
+---
+title: "inc_analysis"
+author: "nicholas ruiz"
+date: "2024-04-30"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(readxl)
+library(lme4)
+library(lmerTest)
+library(reghelper)
+library(interactions)
+```
+
+## import data
+
+```{r import data}
+inc_raw_data = read_excel("inc_all_data_final.xlsx",sheet = "raw_data")
+inc_dbl_scr_hand = read_excel("inc_all_data_final.xlsx",sheet = "double_scored")
+```
+
+```{r double score data}
+# double score the data by averaging across the coders for each rat, session, drug, sex, and timepoint
+
+inc_raw_data %>%
+  group_by(subject,drug,sex,session,time) %>%
+  summarise(beam = mean(beam_breaks,na.rm = TRUE),
+            sniff_cnt = mean(sniff_cnt,na.rm = TRUE),
+            sniff = mean(sniffing,na.rm = TRUE),
+            groom_cnt = mean(groom_cnt,na.rm = TRUE),
+            groom = mean(grooming,na.rm = TRUE),
+            shake = mean(shakes,na.rm = TRUE),
+            seek_cnt = mean(seeking_cnt,na.rm = TRUE),
+            seek = mean(seeking,na.rm = TRUE),
+            lever = mean(lever,na.rm = TRUE)) -> inc_dbl_scr
+
+# inc_dbl_scr$time = as.factor(inc_dbl_scr$time)
+inc_dbl_scr$session = as.factor(inc_dbl_scr$session)
+
+inc_dbl_scr$sex = as.factor(inc_dbl_scr$sex)
+inc_dbl_scr$drug = as.factor(inc_dbl_scr$drug)
+
+# create inc_sneek
+inc_dbl_scr %>%
+  mutate(seek = ifelse(is.nan(seek), 0, seek),
+         sneek = seek + sniff) -> inc_sneek
+```
+
+
+
+## How do drug and session relate to lever pressing?
+
+```{r}
+lev_m1 <- lmer(lever ~ session + (1|subject),data = inc_dbl_scr)
+
+lev_m2 <- lmer(lever ~ session + drug + (1|subject),data = inc_dbl_scr)
+anova(lev_m1,lev_m2)
+
+# model 2 wins
+```
+
+```{r}
+lev_m3 <- lmer(lever ~ session + drug + time + (1|subject),data = inc_dbl_scr)
+anova(lev_m3,lev_m2)
+
+# model 3 wins
+
+lev_m4 <- lmer(lever ~ session * drug + time + (1|subject),data = inc_dbl_scr)
+anova(lev_m4,lev_m3)
+
+# model 4 wins
+```
+
+```{r}
+lev_m5 <- lmer(lever ~ session + drug + time + session:drug + drug:time + (1|subject),data = inc_dbl_scr)
+anova(lev_m5,lev_m4)
+
+# model 5 winner
+
+lev_m6 <- lmer(lever ~ session + drug + time + session:drug + drug:time + session:time + (1|subject),data = inc_dbl_scr)
+anova(lev_m6,lev_m5)
+
+# model 5 and 6 not different
+
+lev_m7 <- lmer(lever ~ session * drug * time + (1|subject),data = inc_dbl_scr)
+anova(lev_m6,lev_m7)
+```
+
+```{r}
+summary(lev_m7)
+simple_slopes(lev_m7)
+interact_plot(model = lev_m7, pred = "time", modx = "session")
+```
+
+```{r winning model summary}
+summary(lev_m5)
+simple_slopes(lev_m5, levels=list(drug=c(1,2,'sstest'),time=c(1,2,3,4,5,6,'sstest')))
+```
+
+```{r}
+sim_slopes(model = lev_m5, pred = "session", modx = "drug")
+interact_plot(model = lev_m5, pred = "session", modx = "drug", interval = TRUE)
+
+# lever pressing incubating more for heroin than sucrose (sucrose higher overall)
+```
+
+```{r fig 1a}
+library(emmeans)
+library(pbkrtest)
+
+emms <- emmeans(lev_m5, ~ session * drug)
+emms_df <- as.data.frame(emms)
+
+# Modify the levels of drug to label them as "Heroin" and "Sucrose"
+emms_df$drug <- factor(emms_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+# Create the plot with customizations
+ggplot(emms_df, aes(x = session, y = emmean, color = drug, group = drug)) +
+  geom_line(size = 10) +  # Change line thickness here
+  geom_point(size = 15) +   # Change point size here
+  labs(x = "Session", y = "Lever Presses", 
+       color = "Drug", 
+       title = "") + # Interaction of Session and Drug on Lever Pressing
+  theme_minimal() +
+  theme(plot.title = element_text(size = 50), 
+        axis.title = element_text(size = 50)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  # theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 40), 
+        legend.text = element_text(size = 40),
+        axis.text.x = element_text(size = 40),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 40)) + # Adjust y-axis label text size here
+  scale_y_continuous(breaks = 1:5, limits = c(1, 5))
+
+# Resize the plot
+# ggsave("session_drug_interaction_plot.png", width = 16, height = 12)  # Save with specific dimensions
+
+ggsave("fig1a.svg", width = 16, height = 12)  # Save with specific dimensions
+```
+
+
+```{r}
+sim_slopes(model = lev_m5, pred = "time", modx = "drug")
+interact_plot(model = lev_m5, pred = "time", modx = "drug", interval = TRUE)
+
+# lever pressing decreasing faster for sucrose
+```
+
+```{r fig 1b}
+library(emmeans)
+library(ggplot2)
+
+# Create a sequence of 'time' values to predict for (adjust the range as needed)
+time_values <- seq(min(inc_dbl_scr$time), max(inc_dbl_scr$time), length.out = 100)
+
+# Get estimated marginal means for the interaction between time and drug
+emms_time_drug <- emmeans(lev_m5, ~ time * drug, at = list(time = time_values))
+
+# Convert to a data frame for plotting
+emms_time_drug_df <- as.data.frame(emms_time_drug)
+
+# Modify the drug factor to label them as "Heroin" and "Sucrose"
+emms_time_drug_df$drug <- factor(emms_time_drug_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+# Plot using ggplot2, adding confidence intervals and showing all x-axis labels
+ggplot(emms_time_drug_df, aes(x = time, y = emmean, color = drug, group = drug)) +
+  # Add confidence intervals using geom_ribbon (shaded area)
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL, fill = drug), alpha = 0.5, color = NA) +
+  geom_line(size = 5) +  # Line thickness
+  labs(x = "Time", y = "Lever Presses", 
+       color = "Drug", fill = "Drug", 
+       title = "") + # Interaction of Time and Drug on Lever Pressing
+  theme_minimal() +
+  theme(plot.title = element_text(size = 50), 
+        axis.title = element_text(size = 50)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  scale_fill_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +  # Match line color for confidence interval
+  # theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 40), 
+        legend.text = element_text(size = 40),
+        axis.text.x = element_text(size = 40),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 40)) + # Adjust y-axis label text size here
+  scale_x_continuous(breaks = 1:6) + # Ensure all x-axis labels are shown
+  scale_y_continuous(breaks = 1:7)
+
+# Resize the plot (optional)
+# ggsave("time_drug_interaction_with_CI_plot.png", width = 16, height = 12)
+
+ggsave("fig1b.svg", width = 16, height = 12)
+```
+
+
+
+# examine drug by time interactions on lever pressing by session
+
+```{r}
+library(emmeans)
+library(ggplot2)
+
+# Create a sequence of 'time' values to predict for (adjust the range as needed)
+time_values <- seq(min(inc_dbl_scr$time), max(inc_dbl_scr$time), length.out = 100)
+
+# Get estimated marginal means for the interaction between time and drug for session = 1
+emms_time_drug_s1 <- emmeans(lev_m5, ~ time * drug, at = list(time = time_values, session = "1"))
+
+# Convert to a data frame for plotting
+emms_time_drug_s1_df <- as.data.frame(emms_time_drug_s1)
+
+# Modify the drug factor to label them as "Heroin" and "Sucrose"
+emms_time_drug_s1_df$drug <- factor(emms_time_drug_s1_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+# Plot for session = 1
+ggplot(emms_time_drug_s1_df, aes(x = time, y = emmean, color = drug, group = drug)) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL, fill = drug), alpha = 0.2, color = NA) +
+  geom_line(size = 1.5) +
+  labs(x = "Time", y = "Lever Presses", color = "Drug", fill = "Drug", title = "Drug x Time Interaction (Day 1)") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 16), axis.title = element_text(size = 14)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  scale_fill_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 15), legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12)) +
+  scale_x_continuous(breaks = 1:6) +
+  scale_y_continuous(breaks = 1:7)
+
+# Save the plot for session 1
+ggsave("time_drug_interaction_session1_with_CI_plot.png", width = 8, height = 6)
+
+# Repeat for session = 2
+emms_time_drug_s2 <- emmeans(lev_m5, ~ time * drug, at = list(time = time_values, session = "2"))
+emms_time_drug_s2_df <- as.data.frame(emms_time_drug_s2)
+emms_time_drug_s2_df$drug <- factor(emms_time_drug_s2_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+ggplot(emms_time_drug_s2_df, aes(x = time, y = emmean, color = drug, group = drug)) +
+  geom_ribbon(aes(ymin = lower.CL, ymax = upper.CL, fill = drug), alpha = 0.2, color = NA) +
+  geom_line(size = 1.5) +
+  labs(x = "Time", y = "Lever Presses", color = "Drug", fill = "Drug", title = "Drug x Time Interaction (Day 30)") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 16), axis.title = element_text(size = 14)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  scale_fill_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 15), legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 12), axis.text.y = element_text(size = 12)) +
+  scale_x_continuous(breaks = 1:6) +
+  scale_y_continuous(breaks = 1:7)
+
+# Save the plot for session 2
+ggsave("time_drug_interaction_session2_with_CI_plot.png", width = 8, height = 6)
+
+```
+
+
+
+### How do the other behaviors independently relate to lever pressing, regardless of drug and session?
+
+```{r}
+lev_groom <- lmer(lever ~ groom + (1|subject),data = inc_dbl_scr)
+summary(lev_groom)
+
+# grooming goes down when lever pressing goes up
+```
+
+
+
+```{r}
+lev_sniff <- lmer(lever ~ sniff + (1|subject),data = inc_dbl_scr)
+summary(lev_sniff)
+
+# sniffing marginally goes down when lever pressing goes up
+```
+
+```{r}
+lev_beam <- lmer(lever ~ beam + (1|subject),data = inc_dbl_scr)
+summary(lev_beam)
+
+# locomotion goes up when lever pressing goes up
+```
+
+```{r}
+lev_shake <- lmer(lever ~ shake + (1|subject),data = inc_dbl_scr)
+summary(lev_shake)
+
+# shaking goes down when lever pressing goes up
+```
+
+
+```{r}
+lev_seek <- lmer(lever ~ seek + (1|subject),data = inc_dbl_scr)
+summary(lev_seek)
+
+# seeking not related to lever pressing
+```
+
+
+# do things change when all the variables are in the same model?
+
+```{r}
+library(sjPlot)
+
+lev_all_ind <- lmer(lever ~ groom + sniff + shake + beam + (1|subject),data = inc_dbl_scr)
+summary(lev_all_ind)
+
+# when combined, all results hold
+
+plot_model(lev_all_ind, type = 'pred')
+```
+
+# plot fig 2
+
+```{r}
+library(effects)
+library(lme4)
+library(lmerTest)
+
+lev_all_ind <- lmer(lever ~ groom + sniff + shake + beam + (1|subject),data = inc_dbl_scr)
+summary(lev_all_ind)
+
+# get effect size estimates from model
+effects_groom_fig2 <- as.data.frame(effect(term = "groom", mod = lev_all_ind)) 
+effects_sniff_fig2 <- as.data.frame(effect(term = "sniff", mod = lev_all_ind)) 
+effects_beam_fig2 <- as.data.frame(effect(term = "beam", mod = lev_all_ind)) 
+effects_shake_fig2 <- as.data.frame(effect(term = "shake", mod = lev_all_ind)) 
+
+# Define color scheme for drugs
+fig2_colors <- "lightgreen"
+```
+
+
+```{r}
+# fig2_colors should be a named vector whose names match the strings
+# you pass in for x_var, e.g.:
+fig2_colors <- c(beam = "#F8766D", sniff = "#00BFC4",
+                 groom = "#7CAE00", shake = "#C77CFF")
+
+create_fig2 <- function(data, x_var,
+                        x_label, y_label,
+                        x_limits, y_limits,
+                        effects_mat,
+                        fig2_colors,
+                        point_col = "grey50") {
+
+  # Pick the colour that corresponds to the x-variable
+  this_col <- fig2_colors[[x_var]]
+
+  ggplot() +
+    ## points (NOT coloured by session or x_var)
+    geom_point(
+      data = data,
+      aes(x = .data[[x_var]], y = lever),
+      alpha = 0.2,
+      colour = point_col
+    ) +
+
+    ## ribbon (keeps y = fit as you requested)
+    geom_ribbon(
+      data = effects_mat,
+      aes(x = .data[[x_var]], y = fit,
+          ymin = lower, ymax = upper),
+      fill   = this_col,   # constant fill chosen above
+      colour = NA,         # no border
+      alpha  = 0.2
+    ) +
+
+    ## line (same constant colour)
+    geom_line(
+      data = effects_mat,
+      aes(x = .data[[x_var]], y = fit),
+      colour   = this_col,
+      linewidth = 2
+    ) +
+
+    labs(x = x_label, y = y_label) +
+
+    # keep axes and theme
+    theme(
+      axis.title = element_text(size = 30),
+      axis.text  = element_text(size = 25)
+    ) +
+
+    coord_cartesian(xlim = x_limits, ylim = y_limits)
+  
+}
+```
+
+
+```{r fig 2}
+library(cowplot)
+
+# beam
+fig2_beam <- create_fig2(inc_dbl_scr, "beam", "Locomotion", "Lever Presses", c(0,50), c(0,10), effects_beam_fig2, fig2_colors)
+
+# groom
+fig2_groom <- create_fig2(inc_dbl_scr, "groom", "Grooming", "Lever Presses", c(0,300), c(0,10), effects_groom_fig2, fig2_colors)
+
+# sniff
+fig2_sniff <- create_fig2(inc_dbl_scr, "sniff", "Sniffing", "Lever Presses", c(0,300), c(0,10), effects_sniff_fig2, fig2_colors)
+
+# shake
+fig2_shake <- create_fig2(inc_dbl_scr, "shake", "Shaking", "Lever Presses", c(0,20), c(0,10), effects_shake_fig2, fig2_colors)
+
+# Combine the plots into grids
+fig2_combined <- plot_grid(fig2_beam, fig2_groom, fig2_sniff, fig2_shake, nrow = 1)
+
+# Create final plot with "Heroin" and "Sucrose" labels
+fig2_final <- plot_grid(
+  ggdraw() + draw_label("Behavioral Profile Associated with Incubation", size = 25, fontface = 'bold'),
+  fig2_combined,
+  ncol = 1,
+  rel_heights = c(0.1, 1, 0.1, 1)
+)
+
+# Show the final plot
+print(fig2_final)
+
+# Save the final plot as a .png file
+ggsave(filename = "fig2.svg", 
+        plot = fig2_final,   # Specify the plot object to save
+        width = 20,          # Set the width of the plot (in inches)
+        height = 8,          # Set the height of the plot (in inches)
+        dpi = 300)           # Set the resolution of the plot (300 dpi for high-quality)
+
+# Save the final plot as a .png file
+# ggsave(filename = "lev_by_beh_cowplot.png", 
+#        plot = final_plot,   # Specify the plot object to save
+#        width = 20,          # Set the width of the plot (in inches)
+#        height = 5,          # Set the height of the plot (in inches)
+#        dpi = 300)           # Set the resolution of the plot (300 dpi for high-quality)
+```
+
+```{r}
+inc_dbl_scr %>%
+  pivot_longer(c(beam,groom,sniff,shake), names_to = "behavior", values_to = "response") %>%
+  # Modify the behavior levels to desired labels
+  mutate(behavior = factor(behavior, 
+                           levels = c("beam", "groom", "sniff", "shake"), 
+                           labels = c("Beam Breaks", "Grooming", "Sniffing", "Shaking"))) %>%
+  ggplot(aes(x = response, y = lever)) + 
+  geom_point(alpha = 1/10) +
+  geom_smooth(method = lm, formula = y~x) + 
+  facet_wrap(vars(behavior), ncol=2, scales = "free_x") + 
+  labs(x = "Behaviors", 
+       y = "Lever Presses",
+       title = "Behavioral Profile Associated with Lever Pressing") +
+  theme(plot.title = element_text(size = 16), 
+        axis.title = element_text(size = 14)) +
+  theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(axis.text.x = element_text(size = 12),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 12))  # Adjust y-axis label text size here
+
+# Resize the plot (optional)
+# ggsave("lev_by_beh.png", width = 8, height = 6)
+```
+
+
+
+### how do all the behaviors together relate to lever pressing, regardless of drug and session?
+
+
+```{r}
+lev_beh_all <- lmer(lever ~ groom + groom_cnt + sniff + sniff_cnt + beam + shake + (1|subject),data = inc_dbl_scr)
+summary(lev_beh_all)
+
+# all results from above hold true
+# interestingly amount of time they initiate sniffing goes up, even tho overall sniffing goes down
+```
+
+
+# (skip to below where we incoprorate SNEEK) How do these behaviors relate to lever pressing for drug/sugar, regardless of session?
+
+```{r}
+# seperate out by drug to avoid triple interactions
+inc_dbl_scr %>%
+  filter(drug == 1) -> inc_heroin
+
+inc_dbl_scr %>%
+  filter(drug == 2) -> inc_sucrose
+```
+
+
+## how do all the behaviores together relate to lever pressing, regardless of session for heroin?
+
+
+```{r}
+lev_beh_all_heroin <- lmer(lever ~ beam + groom + shake + sniff + (1|subject),data = inc_heroin)
+summary(lev_beh_all_heroin)
+
+# grooming goes down when lever pressing goes up (same across drug)
+# sniffing goes up (very small) when lever pressing goes up (different across drug)
+# locomotion goes up when lever pressing goes up (same across drug)
+# shake goes down when lever pressing goes up (same across drug)
+```
+
+```{r}
+lev_beh_all_sucrose <- lmer(lever ~ beam + groom + shake + sniff + (1|subject),data = inc_sucrose)
+summary(lev_beh_all_sucrose)
+
+# grooming goes down when lever pressing goes up (same across drug)
+# sniffing goes down when lever pressing goes up (different across drug)
+# locomotion goes up when lever pressing goes up (same across drug)
+# shake goes down when lever pressing goes up (same across drug)
+# seeking unrelated 
+```
+
+
+
+```{r}
+# plotting the four main behaviors by drug
+inc_plots<-inc_dbl_scr
+
+levels(inc_plots$drug) <- c("Heroin","Sucrose")
+
+inc_plots %>%
+  pivot_longer(c(beam,groom,sniff,shake), names_to = "behavior", values_to = "response") %>%
+  # Modify the behavior levels to desired labels
+  mutate(behavior = factor(behavior, 
+                           levels = c("beam", "groom", "sniff", "shake"), 
+                           labels = c("Beam Breaks", "Grooming", "Sniffing", "Shaking"))) %>%
+  ggplot(aes(x = response, y = lever)) + 
+  geom_point(alpha = 1/10) +
+  stat_smooth(method = lm, formula = y~x) + 
+  facet_grid(drug ~ behavior, 
+             scales = "free_x", 
+             switch = 'y') + 
+  labs(x = "Behaviors", 
+       y = "Lever Presses",
+       title = "Behavioral Profile Associated with Lever Pressing Across Drug") +
+  # scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  theme(plot.title = element_text(size = 16), 
+        axis.title = element_text(size = 14)) +
+  theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(axis.text.x = element_text(size = 10),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 12))  # Adjust y-axis label text size here
+
+# Resize the plot (optional)
+#  ggsave("lev_by_beh_by_drug.svg", width = 8, height = 6)
+```
+
+# post hoc investigate sniffing as it goes up for heroin and down for sucrose
+
+```{r}
+lev_sniff_int <- lmer(lever ~ sniff*drug + (1|subject),data = inc_dbl_scr)
+summary(lev_sniff_int)
+simple_slopes(lev_sniff_int)
+interact_plot(model = lev_sniff_int, pred = "sniff", modx = "drug")
+
+# significant drug by sniffing interaction
+```
+
+# investigating seeking and sniffing within sucrose
+
+```{r}
+inc_sucrose %>%
+  mutate(sneek = sniff + seek) -> inc_sucrose
+```
+
+```{r}
+lev_sniff_seek_sucrose <- lmer(lever ~ sniff + seek + (1|subject),data = inc_sucrose)
+summary(lev_sniff_seek_sucrose)
+```
+
+# rexamining the code above using SNIFF+SEEK instead of just sniff
+
+```{r}
+# sniffing vs seeking combinations
+
+# calculate a sneek variable which is sniff + seek
+# for heroin rodents whose seek = NaN, convert to zero
+inc_dbl_scr %>%
+  mutate(seek = ifelse(is.nan(seek), 0 , seek),
+         sneek = seek + sniff) -> inc_sneek
+
+# seperate out by drug to avoid triple interactions
+inc_sneek %>%
+  filter(drug == 1) -> inc_sneek_heroin
+
+inc_sneek %>%
+  filter(drug == 2) -> inc_sneek_sucrose
+
+# re-run drug specific models
+lev_sneek_heroin <- lmer(lever ~ beam + groom + shake + sneek + (1|subject),data = inc_sneek_heroin)
+summary(lev_sneek_heroin) # results hold as this variable didn't change
+
+lev_sneek_sucrose <- lmer(lever ~ beam + groom + shake + sneek + (1|subject),data = inc_sneek_sucrose)
+summary(lev_sneek_sucrose) # results hold, sneek goes down (beta = -0.3) / sniff beta = -0.29
+```
+
+
+
+```{r}
+library(cowplot)
+
+# Add fixed-effect predictions to the data
+inc_sneek_heroin$fixed_pred_lever <- predict(lev_sneek_heroin, re.form = NA)
+inc_sneek_sucrose$fixed_pred_lever <- predict(lev_sneek_sucrose, re.form = NA)
+
+# Sort data by the predictor variable to ensure smooth line
+
+# scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5)))
+
+# For Heroin model (beam)
+p1_heroin <- ggplot(inc_sneek_heroin, aes(x = beam, y = lever)) + 
+  geom_point(alpha = 0.2) +  # Add individual data points
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line (from model predictions)
+  labs(x = "Locomotion", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))  + # Adjust y-axis label text size here
+  xlim(0, 45) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Heroin model (groom)
+p2_heroin <- ggplot(inc_sneek_heroin, aes(x = groom, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Grooming", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))  + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Heroin model (groom)
+p3_heroin <- ggplot(inc_sneek_heroin, aes(x = sneek, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Sniffing", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))  + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Heroin model (groom)
+p4_heroin <- ggplot(inc_sneek_heroin, aes(x = shake, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Shaking", y = "Lever Presses")+
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))   + # Adjust y-axis label text size here
+  xlim(0, 15) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)
+# For Sucrose model (beam)
+p1_sucrose <- ggplot(inc_sneek_sucrose, aes(x = beam, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Beam Breaks", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))  + # Adjust y-axis label text size here
+  xlim(0, 45) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Sucrose model (groom)
+p2_sucrose <- ggplot(inc_sneek_sucrose, aes(x = groom, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Grooming", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Sucrose model (beam)
+p3_sucrose <- ggplot(inc_sneek_sucrose, aes(x = sneek, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Sniffing + Seeking", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Sucrose model (groom)
+p4_sucrose <- ggplot(inc_sneek_sucrose, aes(x = shake, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Shaking", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))  + # Adjust y-axis label text size here
+  xlim(0, 15) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# Combine the plots into grids
+heroin_plots <- plot_grid(p1_heroin, p2_heroin, p3_heroin, p4_heroin, nrow = 1)
+sucrose_plots <- plot_grid(p1_sucrose, p2_sucrose, p3_sucrose, p4_sucrose, nrow = 1)
+
+# Create final plot with "Heroin" and "Sucrose" labels
+final_plot <- plot_grid(
+  ggdraw() + draw_label("Heroin", size = 25, fontface = 'bold'),
+  heroin_plots,
+  ggdraw() + draw_label("Sucrose", size = 25, fontface = 'bold'),
+  sucrose_plots,
+  ncol = 1,
+  rel_heights = c(0.1, 1, 0.1, 1)
+)
+
+# Show the final plot
+print(final_plot)
+
+# Save the final plot as a .png file
+ggsave(filename = "lev_by_beh_by_drug_cowplot.svg", 
+       plot = final_plot,   # Specify the plot object to save
+       width = 20,          # Set the width of the plot (in inches)
+       height = 10,          # Set the height of the plot (in inches)
+       dpi = 300)           # Set the resolution of the plot (300 dpi for high-quality)
+```
+
+
+
+### do these relationships change in early vs late abstinence?
+
+# grooming
+
+```{r}
+lev_groom_sess_heroin <- lmer(lever ~ groom*session + (1|subject),data = inc_heroin)
+summary(lev_groom_sess_heroin)
+simple_slopes(lev_groom_sess_heroin)
+
+# grooming goes down when lever pressing goes up (same across drug)
+# lever pressing goes up across session (same across drug)
+# significant negative interaction (different across drug)
+```
+
+```{r}
+lev_groom_sess_sucrose <- lmer(lever ~ groom*session + (1|subject),data = inc_sucrose)
+summary(lev_groom_sess_sucrose)
+
+# grooming goes down when lever pressing goes up (same across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (different across drug)
+```
+
+# heroin vs sucrose showed different interactions with grooming and session
+# is there a three-way interaction?
+
+```{r}
+lev_groom_sess_3way <- lmer(lever ~ groom*session*drug + (1|subject),data = inc_dbl_scr)
+summary(lev_groom_sess_3way)
+
+# no three-way interaction
+```
+
+
+# sniffing
+
+```{r}
+lev_sniff_sess_heroin <- lmer(lever ~ sniff*session + (1|subject),data = inc_heroin)
+summary(lev_sniff_sess_heroin)
+
+# sniffing goes up when lever pressing goes up (different across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (different across drug)
+```
+
+```{r}
+lev_sniff_sess_sucrose <- lmer(lever ~ sniff*session + (1|subject),data = inc_sucrose)
+summary(lev_sniff_sess_sucrose)
+simple_slopes(lev_sniff_sess_sucrose)
+
+# sniffing goes down when lever pressing goes up (different across drug)
+# lever pressing goes up across session (same across drug)
+# significant negative interaction (different across drug)
+```
+
+# heroin vs sucrose showed different interactions with sniffing and session
+# is there a three-way interaction?
+
+```{r}
+lev_sniff_sess_3way <- lmer(lever ~ sniff*session*drug + (1|subject),data = inc_dbl_scr)
+summary(lev_sniff_sess_3way)
+
+# no three-way interaction
+```
+
+# locomotion 
+
+```{r}
+lev_beam_sess_heroin <- lmer(lever ~ beam*session + (1|subject),data = inc_heroin)
+summary(lev_beam_sess_heroin)
+simple_slopes(lev_beam_sess_heroin)
+
+# locomotion goes up when lever pressing goes up (same across drug)
+# lever pressing goes up across session (same across drug)
+# significant negative interaction (different across drug)
+```
+
+```{r}
+lev_beam_sess_sucrose <- lmer(lever ~ beam*session + (1|subject),data = inc_sucrose)
+summary(lev_beam_sess_sucrose)
+
+# locomotion goes down when lever pressing goes up (same across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (different across drug)
+```
+
+# heroin vs sucrose showed different interactions with locomotion and session
+# is there a three-way interaction?
+
+```{r}
+lev_beam_sess_3way <- lmer(lever ~ beam*session*drug + (1|subject),data = inc_dbl_scr)
+summary(lev_beam_sess_3way)
+
+# no three-way interaction
+```
+
+``` {r}
+# plotting the four main behaviors by drug
+inc_plots<-inc_dbl_scr
+
+levels(inc_plots$session) <- c("day 1","day 30")
+
+inc_plots %>%
+  pivot_longer(c(beam,groom,sniff,shake), names_to = "behavior", values_to = "response") %>%
+  filter(drug == 1) %>%
+  ggplot(aes(x = response, y = lever)) + 
+  geom_point(alpha = 1/10) +
+  geom_smooth(method = lm, formula = y~x) + 
+  facet_grid(session ~ behavior, 
+             scales = "free_x", 
+             switch = 'y') + 
+  labs(title = "heroin", x = "drug", y = "lever presses")
+```
+
+```{r}
+library(cowplot)
+
+# Sort data by the predictor variable to ensure smooth line
+
+# scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5)))
+levels(inc_sneek_heroin$session) <- c("Day 1","Day 30")
+
+inc_sneek_heroin %>%
+  filter(session == "Day 1") -> inc_sneek_heroin_d1
+
+inc_sneek_heroin %>%
+  filter(session == "Day 30") -> inc_sneek_heroin_d30
+
+# For Heroin model (beam)
+p1_heroin <- ggplot(inc_sneek_heroin_d1, aes(x = beam, y = lever)) +
+  geom_point(alpha = 0.2) +  # Add individual data points
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +   
+  labs(x = "Locomotion", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 45) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Heroin model (groom)
+p2_heroin <- ggplot(inc_sneek_heroin_d1, aes(x = groom, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Grooming", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+# For Heroin model (groom)
+p3_heroin <- ggplot(inc_sneek_heroin_d1, aes(x = sneek, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Sniffing", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))  + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Heroin model (groom)
+p4_heroin <- ggplot(inc_sneek_heroin_d1, aes(x = shake, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Shaking", y = "Lever Presses")+
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 15) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)
+
+# For Heroin model (beam)
+p5_heroin <- ggplot(inc_sneek_heroin_d30, aes(x = beam, y = lever)) +
+  geom_point(alpha = 0.2) +  # Add individual data points
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +   
+  labs(x = "Locomotion", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 45) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Heroin model (groom)
+p6_heroin <- ggplot(inc_sneek_heroin_d30, aes(x = groom, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Grooming", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Heroin model (groom)
+p7_heroin <- ggplot(inc_sneek_heroin_d30, aes(x = sneek, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Sniffing", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For Heroin model (groom)
+p8_heroin <- ggplot(inc_sneek_heroin_d30, aes(x = shake, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(1, 0.4, 0, 0.5)) +  # Add smooth regression line
+  labs(x = "Shaking", y = "Lever Presses")+
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))  + # Adjust y-axis label text size here
+  xlim(0, 15) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)
+
+# Combine the plots into grids
+d1_plots <- plot_grid(p1_heroin, p2_heroin, p3_heroin, p4_heroin, nrow = 1)
+d30_plots <- plot_grid(p5_heroin, p6_heroin, p7_heroin, p8_heroin, nrow = 1)
+
+# Create final plot with "Heroin" and "Sucrose" labels
+final_plot <- plot_grid(
+  ggdraw() + draw_label("Heroin Day 1", size = 25, fontface = 'bold'),
+  d1_plots,
+  ggdraw() + draw_label("Heroin Day 30", size = 25, fontface = 'bold'),
+  d30_plots,
+  ncol = 1,
+  rel_heights = c(0.1, 1, 0.1, 1)
+)
+
+# Show the final plot
+print(final_plot)
+
+# Save the final plot as a .png file
+ggsave(filename = "lev_by_beh_by_session_heroin_cowplot.png", 
+       plot = final_plot,   # Specify the plot object to save
+       width = 20,          # Set the width of the plot (in inches)
+       height = 10,          # Set the height of the plot (in inches)
+       dpi = 300)           # Set the resolution of the plot (300 dpi for high-quality)
+```
+
+
+
+
+``` {r}
+# plotting the four main behaviors by drug
+inc_plots<-inc_dbl_scr
+
+levels(inc_plots$session) <- c("day 1","day 30")
+
+inc_plots %>%
+  pivot_longer(c(beam,groom,sniff,shake), names_to = "behavior", values_to = "response") %>%
+  filter(drug == 2) %>%
+  ggplot(aes(x = response, y = lever)) + 
+  geom_point(alpha = 1/10) +
+  geom_smooth(method = lm, formula = y~x) + 
+  facet_grid(session ~ behavior, 
+             scales = "free_x", 
+             switch = 'y') + 
+  labs(title = "sucrose", x = "drug", y = "lever presses")
+```
+
+```{r}
+library(cowplot)
+
+# Sort data by the predictor variable to ensure smooth line
+
+# scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5)))
+levels(inc_sneek_sucrose$session) <- c("Day 1","Day 30")
+
+inc_sneek_sucrose %>%
+  filter(session == "Day 1") -> inc_sneek_sucrose_d1
+
+inc_sneek_sucrose %>%
+  filter(session == "Day 30") -> inc_sneek_sucrose_d30
+
+# For sucrose model (beam)
+p1_sucrose <- ggplot(inc_sneek_sucrose_d1, aes(x = beam, y = lever)) +
+  geom_point(alpha = 0.2) +  # Add individual data points
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +   
+  labs(x = "Locomotion", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 45) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)  
+
+# For sucrose model (groom)
+p2_sucrose <- ggplot(inc_sneek_sucrose_d1, aes(x = groom, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Grooming", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+
+# For sucrose model (groom)
+p3_sucrose <- ggplot(inc_sneek_sucrose_d1, aes(x = sneek, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Sniffing + Seeking", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18))+ # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement) 
+# For sucrose model (groom)
+p4_sucrose <- ggplot(inc_sneek_sucrose_d1, aes(x = shake, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Shaking", y = "Lever Presses")+
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 15) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)
+
+# For sucrose model (beam)
+p5_sucrose <- ggplot(inc_sneek_sucrose_d30, aes(x = beam, y = lever)) +
+  geom_point(alpha = 0.2) +  # Add individual data points
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +   
+  labs(x = "Locomotion", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 45) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)  
+
+# For sucrose model (groom)
+p6_sucrose <- ggplot(inc_sneek_sucrose_d30, aes(x = groom, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Grooming", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)  
+
+# For sucrose model (sneek)
+p7_sucrose <- ggplot(inc_sneek_sucrose_d30, aes(x = sneek, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Sniffing + Seeking", y = "Lever Presses") +
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 300) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)  
+
+# For sucrose model (shake)
+p8_sucrose <- ggplot(inc_sneek_sucrose_d30, aes(x = shake, y = lever)) + 
+  geom_point(alpha = 0.2) + 
+  geom_smooth(method = "lm", se = TRUE, color = rgb(0, 0.8, 1, 0.5)) +  # Add smooth regression line
+  labs(x = "Shaking", y = "Lever Presses")+
+  theme(axis.title = element_text(size = 20)) +
+  theme(axis.text.x = element_text(size = 18),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 18)) + # Adjust y-axis label text size here
+  xlim(0, 15) +  # Set x-axis limits (change values as per your requirement)
+  ylim(0, 10)    # Set y-axis limits (change values as per your requirement)
+
+# Combine the plots into grids
+d1_plots <- plot_grid(p1_sucrose, p2_sucrose, p3_sucrose, p4_sucrose, nrow = 1)
+d30_plots <- plot_grid(p5_sucrose, p6_sucrose, p7_sucrose, p8_sucrose, nrow = 1)
+
+# Create final plot with "sucrose" and "Sucrose" labels
+final_plot <- plot_grid(
+  ggdraw() + draw_label("Sucrose Day 1", size = 25, fontface = 'bold'),
+  d1_plots,
+  ggdraw() + draw_label("Sucrose Day 30", size = 25, fontface = 'bold'),
+  d30_plots,
+  ncol = 1,
+  rel_heights = c(0.1, 1, 0.1, 1)
+)
+
+# Show the final plot
+print(final_plot)
+
+# Save the final plot as a .png file
+ggsave(filename = "lev_by_beh_by_session_sucrose_cowplot.png", 
+       plot = final_plot,   # Specify the plot object to save
+       width = 20,          # Set the width of the plot (in inches)
+       height = 10,          # Set the height of the plot (in inches)
+       dpi = 300)           # Set the resolution of the plot (300 dpi for high-quality)
+```
+
+# shaking 
+
+```{r}
+lev_shake_sess_heroin <- lmer(lever ~ shake*session + (1|subject),data = inc_heroin)
+summary(lev_shake_sess_heroin)
+
+# no relationship bw shaking and lever (different across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (same across drug)
+
+
+```
+
+```{r}
+lev_shake_sess_sucrose <- lmer(lever ~ shake*session + (1|subject),data = inc_sucrose)
+summary(lev_shake_sess_sucrose)
+
+# shaking goes down when lever pressing goes up (different across drug)
+# lever pressing goes up across session (same across drug)
+# no interaction (same across drug)
+```
+
+
+### do any session 1 behaviors predict the rate of incubation?
+
+# create an 'incubation score' to represent the rate of incubation
+
+```{r}
+# separate data out by session
+inc_dbl_scr %>%
+  pivot_wider(names_from = session, values_from = c(beam,sniff_cnt,sniff,groom_cnt,groom,shake,seek_cnt,seek,lever)) -> inc_wider
+
+# calculate incubation score
+inc_wider %>%
+  mutate(inc_score = (lever_2-lever_1)/lever_1) -> inc_wider
+
+# Remove rows where inc_score has NA/NaN/Inf
+inc_wider_clean <- inc_wider[!is.na(inc_wider$inc_score) & is.finite(inc_wider$inc_score), ]
+
+inc_wider_clean %>%
+  filter(drug == 1) -> inc_wider_heroin
+
+inc_wider_clean %>%
+  filter(drug == 2) -> inc_wider_sucrose
+```
+
+# explore the data that is left over
+
+```{r}
+summary(inc_wider_clean)
+```
+
+
+
+```{r}
+inc_rate_test <- lmer(inc_score ~ groom_1*drug + (1|subject),data = inc_wider)
+summary(inc_rate_test)
+```
+
+
+# how does grooming at session 1 relate to rate of incubation? 
+
+```{r}
+inc_scr_groom <- lmer(inc_score ~ groom_1 + (1|subject),data = inc_wider_heroin)
+summary(inc_scr_groom)
+
+# grooming at session 1 positively predicts incubation rate
+```
+
+
+```{r}
+ggplot(data = inc_wider_heroin, aes(x = groom_1, y = inc_score)) +
+  geom_smooth(method = lm, formula = y~x)
+```
+
+
+
+# how does sniffing at session 1 relate to rate of incubation? 
+
+```{r}
+inc_scr_sniff <- lmer(inc_score ~ sniff_1 + (1|subject),data = inc_wider_heroin)
+summary(inc_scr_sniff)
+
+# sniffing at session 1 does not predict incubation rate
+```
+
+
+# how does locomotion at session 1 relate to rate of incubation? 
+
+```{r}
+inc_scr_beam <- lmer(inc_score ~ beam_1 + (1|subject),data = inc_wider_heroin)
+summary(inc_scr_beam)
+
+# locomotion at session 1 does not predict incubation rate
+```
+
+```{r}
+ggplot(data = inc_wider_heroin, aes(x = beam_1, y = inc_score)) +
+  geom_smooth(method = lm, formula = y~x)
+```
+
+## look at sucrose now (very small sample size)
+
+# how does shaking at session 1 relate to rate of incubation? 
+
+```{r}
+inc_scr_shake_s <- lmer(inc_score ~ shake_1 + (1|subject),data = inc_wider_sucrose)
+summary(inc_scr_shake_s)
+
+# shaking at session 1 positively predicts incubation rate
+```
+
+# how does grooming at session 1 relate to rate of incubation? 
+
+```{r}
+inc_scr_groom_s <- lmer(inc_score ~ groom_1 + (1|subject),data = inc_wider_sucrose)
+summary(inc_scr_groom_s)
+
+# grooming at session 1 does not predict incubation rate
+```
+
+
+# how does sniffing at session 1 relate to rate of incubation? 
+
+```{r}
+inc_scr_sniff_s <- lmer(inc_score ~ sniff_1 + (1|subject),data = inc_wider_sucrose)
+summary(inc_scr_sniff_s)
+
+# sniffing at session 1 positively predicts incubation rate
+```
+
+
+```{r}
+ggplot(data = inc_wider_sucrose, aes(x = sniff_1, y = inc_score)) +
+  geom_smooth(method = lm, formula = y~x)
+```
+
+# how does locomotion at session 1 relate to rate of incubation? 
+
+```{r}
+inc_scr_beam_s <- lmer(inc_score ~ beam_1 + (1|subject),data = inc_wider_sucrose)
+summary(inc_scr_beam_s)
+
+# locomotion at session 1 does not predict incubation rate
+```
+
+```{r}
+ggplot(data = inc_wider_sucrose, aes(x = beam_1, y = inc_score)) +
+  geom_smooth(method = lm, formula = y~x)
+```
+
+# how does shaking at session 1 relate to rate of incubation? 
+
+```{r}
+inc_scr_shake_s <- lmer(inc_score ~ shake_1 + (1|subject),data = inc_wider_sucrose)
+summary(inc_scr_shake_s)
+
+# shaking at session 1 positively predicts incubation rate
+```
+
+
+

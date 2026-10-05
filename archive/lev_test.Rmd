@@ -1,0 +1,158 @@
+---
+title: "lev_test"
+author: "nicholas ruiz"
+date: "2024-09-24"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lme4)
+```
+
+# doing minor or test analyses
+
+```{r}
+## are lever presses at day 1 at floor?
+
+inc_sessions %>%
+  filter(session == 1) -> inc_sess1
+
+shapiro.test(inc_sess1$lever)
+t.test(inc_sess1$lever, mu = 0)
+wilcox.test(inc_sess1$lever, mu = 0)
+```
+
+```{r}
+## how does sex play a role in the models?
+# aka compare to hannah's results
+
+# collapse across within-session time
+inc_sessions <- inc_dbl_scr %>%
+  group_by(subject, session, drug, sex) %>%
+  summarise(
+    beam = mean(beam),
+    sniff = mean(sniff),
+    groom = mean(groom),
+    shake = mean(shake),
+    lever = mean(lever)
+  )
+
+lev_test <- lmer(lever ~ session * drug * sex + (1|subject),data = inc_sessions)
+summary(lev_test)
+
+lev_test <- lmer(groom ~ session * drug * sex + (1|subject),data = inc_sessions)
+summary(lev_test)
+
+lev_test <- lmer(beam ~ session * drug * sex + (1|subject),data = inc_sessions)
+summary(lev_test)
+
+lev_test <- lmer(sniff ~ session * drug * sex + (1|subject),data = inc_sessions)
+summary(lev_test)
+
+# no three way interactions with sex
+```
+
+
+```{r}
+# sniffing vs seeking combinations
+
+# calculate a sneek variable which is sniff + seek
+# for heroin rodents whose seek = NaN, convert to zero
+inc_dbl_scr %>%
+  mutate(seek = ifelse(is.nan(seek), 0 , seek),
+         sneek = seek + sniff) -> inc_sneek
+
+# re-run all behaviors by lever
+lev_sneek <- lmer(lever ~ groom + sneek + shake + beam + (1|subject),data = inc_sneek)
+summary(lev_sneek) # results hold
+
+# seperate out by drug to avoid triple interactions
+inc_sneek %>%
+  filter(drug == 1) -> inc_sneek_heroin
+
+inc_sneek %>%
+  filter(drug == 2) -> inc_sneek_sucrose
+
+# re-run drug specific models
+lev_sneek_heroin <- lmer(lever ~ beam + groom + shake + sneek + (1|subject),data = inc_sneek_heroin)
+summary(lev_sneek_heroin) # results hold as this variable didn't change
+
+lev_sneek_sucrose <- lmer(lever ~ beam + groom + shake + sneek + (1|subject),data = inc_sneek_sucrose)
+summary(lev_sneek_sucrose) # results hold, sneek goes down (beta = -0.3) / sniff beta = -0.29
+```
+
+
+```{r}
+rand_slp_test <- lmer(lever ~ sniff + (1 + sniff|subject),data = inc_dbl_scr)
+summary(rand_slp_test)
+
+# Extract random effects
+random_effects <- ranef(rand_slp_test)$subject
+
+# Convert random effects to a dataframe
+random_effects_df <- as.data.frame(random_effects)
+
+# Add subject IDs
+random_effects_df$subject <- rownames(random_effects)
+
+# Plot random slopes for IV1
+ggplot(random_effects_df, aes(x = subject, y = sniff)) +
+  geom_point() + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") + 
+  labs(title = "Random Slopes for Sniffing by Subject", 
+       x = "Subject", 
+       y = "Random Slope for Sniffing") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r}
+summary(lmer(lever ~ sniff*session + (1|subject), data = inc_dbl_scr))
+```
+
+
+```{r}
+library(ggplot2)
+
+lev_test <- lmer(shake ~ session + drug + time + session:drug + drug:time + (1|subject),data = inc_dbl_scr)
+summary(lev_test)
+
+emms <- emmeans(lev_test, ~ session * drug)
+emms_df <- as.data.frame(emms)
+
+
+
+# Modify the levels of drug to label them as "Heroin" and "Sucrose"
+emms_df$drug <- factor(emms_df$drug, levels = c(1, 2), labels = c("Heroin", "Sucrose"))
+
+# Create the plot with customizations
+ggplot(emms_df, aes(x = session, y = emmean, color = drug, group = drug)) +
+  geom_line(size = 3) +  # Change line thickness here
+  geom_point(size = 6) +   # Change point size here
+  labs(x = "Session", y = "shakes", 
+       color = "Drug", 
+       title = "Interaction of Session and Drug on Shakes") +
+  theme_minimal() +
+  theme(plot.title = element_text(size = 16), 
+        axis.title = element_text(size = 14)) +
+  scale_color_manual(values = c("Heroin" = rgb(1, 0.4, 0, 0.5), "Sucrose" = rgb(0, 0.8, 1, 0.5))) +
+  theme(plot.margin = margin(10, 10, 10, 10)) +
+  theme(legend.title = element_text(size = 15), 
+        legend.text = element_text(size = 15),
+        axis.text.x = element_text(size = 15),   # Adjust x-axis label text size here
+        axis.text.y = element_text(size = 15)) # Adjust y-axis label text size here
+  # scale_y_continuous(breaks = 1:5, limits = c(1, 5))
+
+# Resize the plot
+# ggsave("session_drug_interaction_plot.png", width = 8, height = 6)  # Save with specific dimensions
+```
+
+```{r}
+lev_test <- lmer(shake ~ beam + sniff + groom + (1|subject),data = inc_dbl_scr)
+summary(lev_test)
+```
+
+
