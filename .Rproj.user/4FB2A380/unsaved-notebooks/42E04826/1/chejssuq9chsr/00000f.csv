@@ -1,5 +1,0 @@
-"0","# generate jackknife estimates for mean"
-"0","j.mean <- apply(inc_dbl_scr$lever, 1, jknife, mean)"
-"2","Error in apply(inc_dbl_scr$lever, 1, jknife, mean) : 
-  dim(X) must have a positive length
-"

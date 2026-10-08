@@ -1,2 +1,0 @@
-"0","jack.means <- jknife(inc_dbl_scr$lever, mean)"
-"0","jack.vars <- jknife(inc_dbl_scr$lever, var)"

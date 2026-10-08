@@ -16,13 +16,13 @@ library(readxl)
 library(reghelper)
 ```
 
-### prepare dataframes for analysis and figure 3
+### prepare dataframes for analysis and figure 2
 
 ## import data
 
 ```{r import data}
-inc_raw_data = read_excel("inc_all_data_final.xlsx",sheet = "raw_data")
-inc_dbl_scr_hand = read_excel("inc_all_data_final.xlsx",sheet = "double_scored")
+inc_raw_data = read_excel("data/inc_all_data_final.xlsx",sheet = "raw_data")
+inc_dbl_scr_hand = read_excel("data/inc_all_data_final.xlsx",sheet = "double_scored")
 ```
 
 ```{r double score data}
@@ -326,11 +326,11 @@ final_plot <- cowplot::plot_grid(
 print(final_plot)
 ```
 
-### save plot
+### save figure 2
 
 ```{r save plot}
 # Save the final plot as a .png file
-ggsave(filename = "lev_by_beh_by_session_combined.svg", 
+ggsave(filename = "figures/fig2.eps", 
        plot = final_plot,   # Specify the plot object to save
        width = 20,          # Set the width of the plot (in inches)
        height = 10,         # Set the height of the plot (in inches)

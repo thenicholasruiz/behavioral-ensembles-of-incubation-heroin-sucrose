@@ -1,2 +1,0 @@
-"0","# create a convenience function"
-"0","get.ci <- function(x) { return(x$ci) }  #x$ci gives confidence interval"
