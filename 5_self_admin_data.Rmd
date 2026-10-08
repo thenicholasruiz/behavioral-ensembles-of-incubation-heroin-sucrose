@@ -1060,7 +1060,7 @@ ivsa_lever_plot <- ivsa_clean %>%
 
 ivsa_lever_plot
 
-ggsave(ivsa_lever_plot, file = "figures/ivsa_lever_plot.png")
+ggsave(ivsa_lever_plot, file = "figures/fig1-1a.tif")
 
 ivsa_reinforcer_plot <- ivsa_clean %>%
   filter(behavior == "infusion") %>%
@@ -1105,7 +1105,7 @@ ivsa_reinforcer_plot <- ivsa_clean %>%
 
 ivsa_reinforcer_plot
 
-ggsave(ivsa_reinforcer_plot, file = "figures/ivsa_reinforcer_plot.png")
+ggsave(ivsa_reinforcer_plot, file = "figures/fig1-1b.tif")
 ```
 
 ```{r}
@@ -1240,7 +1240,7 @@ acq_cue %>%
 
 ivsa_vs_cue_tests
 
-ggsave(ivsa_vs_cue_tests, file = "figures/ivsa_vs_cue_tests.png")
+ggsave(ivsa_vs_cue_tests, file = "figures/fig1-2.tif")
 ```
 
 
